@@ -1,11 +1,13 @@
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
+import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
@@ -33,6 +35,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * All fields, imports, and methods included.
  */
 public class BlackJackGUI extends Application {
+    private static final double CARD_WIDTH = 120;
+    private static final double CARD_HEIGHT = 168;
 
     private boolean isDealerTurn = false;
     private boolean isPlayerTurn = false;
@@ -330,15 +334,49 @@ public class BlackJackGUI extends Application {
 
     private void dealCardWithAnimation(BlackJackPlayer p, int betAmount, HBox container) {
         Card card = deck.dealCard(p, betAmount);
-        String imageName = card.getImageName() + ".png";
-        ImageView iv = new ImageView(new Image("file:resources/images/" + imageName));
-        iv.setFitWidth(120);
-        iv.setPreserveRatio(true);
-        TranslateTransition tt = new TranslateTransition(Duration.millis(500), iv);
+        Node cardNode = createCardNode(card);
+        TranslateTransition tt = new TranslateTransition(Duration.millis(500), cardNode);
         tt.setFromX(-200);
         tt.setToX(0);
         tt.play();
-        container.getChildren().add(iv);
+        container.getChildren().add(cardNode);
+    }
+
+    private Node createCardNode(Card card) {
+        return createImageOrFallback(card.getImageName() + ".png", card.getRank() + "\n" + card.getSuit());
+    }
+
+    private Node createCardBackNode() {
+        return createImageOrFallback("card_back.png", "Card\nBack");
+    }
+
+    private Node createImageOrFallback(String imageName, String fallbackText) {
+        File imageFile = new File("resources/images/" + imageName);
+        if (imageFile.exists()) {
+            Image image = new Image(imageFile.toURI().toString());
+            if (!image.isError()) {
+                ImageView imageView = new ImageView(image);
+                imageView.setFitWidth(CARD_WIDTH);
+                imageView.setPreserveRatio(true);
+                return imageView;
+            }
+        }
+        return createFallbackCard(fallbackText);
+    }
+
+    private Node createFallbackCard(String text) {
+        Label label = new Label(text);
+        label.setAlignment(Pos.CENTER);
+        label.setTextAlignment(TextAlignment.CENTER);
+        label.setWrapText(true);
+        label.setStyle("-fx-font-weight: bold; -fx-text-fill: #2f2517;");
+
+        StackPane card = new StackPane(label);
+        card.setMinSize(CARD_WIDTH, CARD_HEIGHT);
+        card.setPrefSize(CARD_WIDTH, CARD_HEIGHT);
+        card.setMaxSize(CARD_WIDTH, CARD_HEIGHT);
+        card.setStyle("-fx-background-color: #f8f0d8; -fx-border-color: #2f2517; -fx-border-width: 2; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 8;");
+        return card;
     }
 
     private void dealCards() {
@@ -789,16 +827,10 @@ public class BlackJackGUI extends Application {
 
         for (int i = 0; i < dealer.getCurrentHand().size(); i++) {
             if (i == 0 && !isDealerTurn) {
-                ImageView back = new ImageView(new Image("file:resources/images/card_back.png"));
-                back.setFitWidth(120);
-                back.setPreserveRatio(true);
-                dealerCards.getChildren().add(back);
+                dealerCards.getChildren().add(createCardBackNode());
             } else {
                 Card card = dealer.getCurrentHand().get(i);
-                ImageView iv = new ImageView(new Image("file:resources/images/" + card.getImageName() + ".png"));
-                iv.setFitWidth(120);
-                iv.setPreserveRatio(true);
-                dealerCards.getChildren().add(iv);
+                dealerCards.getChildren().add(createCardNode(card));
             }
         }
         if (!isDealerTurn) dealerScore.setText(messages.getString("score.prefix") + "?");
@@ -807,26 +839,17 @@ public class BlackJackGUI extends Application {
             List<Card> hand = player.getHands().get(handIndex);
             HBox handDisplay = new HBox(10);
             for (Card card : hand) {
-                ImageView iv = new ImageView(new Image("file:resources/images/" + card.getImageName() + ".png"));
-                iv.setFitWidth(120);
-                iv.setPreserveRatio(true);
-                handDisplay.getChildren().add(iv);
+                handDisplay.getChildren().add(createCardNode(card));
             }
             playerCards.getChildren().add(handDisplay);
         }
 
         for (Card card : aiPlayer.getCurrentHand()) {
-            ImageView iv = new ImageView(new Image("file:resources/images/" + card.getImageName() + ".png"));
-            iv.setFitWidth(120);
-            iv.setPreserveRatio(true);
-            aiCards.getChildren().add(iv);
+            aiCards.getChildren().add(createCardNode(card));
         }
 
         for (Card card : remotePlayer.getCurrentHand()) {
-            ImageView iv = new ImageView(new Image("file:resources/images/" + card.getImageName() + ".png"));
-            iv.setFitWidth(120);
-            iv.setPreserveRatio(true);
-            remoteCards.getChildren().add(iv);
+            remoteCards.getChildren().add(createCardNode(card));
         }
 
         updateScores();
