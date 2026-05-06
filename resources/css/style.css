@@ -1,0 +1,62 @@
+.root {
+    -fx-background-color: #2b1e0f; /* Dark wood brown */
+}
+
+.label-pirate {
+    -fx-font-family: "Arial Black";
+    -fx-font-size: 18px;
+    -fx-text-fill: #d4a017; /* Gold */
+    -fx-font-weight: bold;
+}
+
+.message-label {
+    -fx-font-family: "Arial Black";
+    -fx-font-size: 16px;
+    -fx-text-fill: #ffffff; /* White for contrast */
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(0, 0, 0, 0.5);
+    -fx-padding: 10;
+}
+
+.hand-label {
+    -fx-font-family: "Arial Black";
+    -fx-font-size: 14px;
+    -fx-text-fill: #d4a017;
+    -fx-font-weight: bold;
+}
+
+.button-pirate {
+    -fx-font-family: "Arial Black";
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-background-color: #8b4513; /* Saddle brown */
+    -fx-text-fill: #d4a017;
+    -fx-padding: 10;
+    -fx-border-color: #d4a017;
+    -fx-border-width: 2;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+}
+
+.button-pirate:hover {
+    -fx-background-color: #a0522d; /* Sienna */
+    -fx-text-fill: #ffffff;
+    -fx-cursor: hand;
+}
+
+.button-pirate:pressed {
+    -fx-background-color: #5c2d0e; /* Darker brown */
+}
+.settings-pane {
+    -fx-background-color: #3c2f1a; /* Darker wood */
+    -fx-border-color: #d4a017;
+    -fx-border-width: 2;
+    -fx-border-radius: 5;
+}
+
+.text-field-pirate {
+    -fx-background-color: #5c2d0e;
+    -fx-text-fill: #d4a017;
+    -fx-font-family: "Arial Black";
+    -fx-font-size: 14px;
+}

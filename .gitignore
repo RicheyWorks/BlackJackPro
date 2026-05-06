@@ -1,0 +1,9 @@
+bin/
+*.class
+resources/logs/
+*.log
+.classpath
+.project
+.settings/
+.idea/
+.vscode/
