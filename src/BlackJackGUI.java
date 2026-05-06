@@ -50,7 +50,8 @@ public class BlackJackGUI extends Application {
     private Button bet1Button, bet5Button, bet10Button, bet25Button, bet100Button, maxBetButton;
 
     private Deck deck;
-    private Label dealerScore, playerScore, messageLabel, aiScore, aiBetLabel, remoteScore;
+    private Label dealerScore, playerScore, messageLabel, aiScore, aiBetLabel, remoteScore,
+            playerChipsLabel, aiChipsLabel, remoteChipsLabel;
     private BlackJackPlayer player, dealer, aiPlayer, remotePlayer;
     private GameLog gameLog;
     private AIStrategy aiStrategy = new CautiousStrategy();
@@ -138,14 +139,14 @@ public class BlackJackGUI extends Application {
 
         Label playerName = new Label("Captain");
         playerScore = new Label(messages.getString("score.prefix") + "0");
-        Label playerChipsLabel = new Label(messages.getString("chips.prefix") + player.getChips().getTotalChips());
+        playerChipsLabel = new Label(messages.getString("chips.prefix") + player.getChips().getTotalChips());
         playerName.getStyleClass().add("label-pirate");
         playerScore.getStyleClass().add("label-pirate");
         playerChipsLabel.getStyleClass().add("label-pirate");
 
         Label aiName = new Label(messages.getString("ai.name"));
         aiScore = new Label(messages.getString("score.prefix") + "0");
-        Label aiChipsLabel = new Label(messages.getString("chips.prefix") + aiPlayer.getChips().getTotalChips());
+        aiChipsLabel = new Label(messages.getString("chips.prefix") + aiPlayer.getChips().getTotalChips());
         aiBetLabel = new Label(messages.getString("bet.prefix") + "0");
         aiName.getStyleClass().add("label-pirate");
         aiScore.getStyleClass().add("label-pirate");
@@ -154,7 +155,7 @@ public class BlackJackGUI extends Application {
 
         Label remoteName = new Label(messages.getString("remote.name"));
         remoteScore = new Label(messages.getString("score.prefix") + "0");
-        Label remoteChipsLabel = new Label(messages.getString("chips.prefix") + remotePlayer.getChips().getTotalChips());
+        remoteChipsLabel = new Label(messages.getString("chips.prefix") + remotePlayer.getChips().getTotalChips());
         remoteName.getStyleClass().add("label-pirate");
         remoteScore.getStyleClass().add("label-pirate");
         remoteChipsLabel.getStyleClass().add("label-pirate");
@@ -256,6 +257,7 @@ public class BlackJackGUI extends Application {
 
         hitButton.setDisable(true);
         standButton.setDisable(true);
+        dealButton.setDisable(true);
         aiPlayButton.setDisable(true);
         splitButton.setDisable(true);
         doubleDownButton.setDisable(true);
@@ -738,20 +740,39 @@ public class BlackJackGUI extends Application {
     }
 
     private void updateChipLabels() {
-        // Called after load/save
+        if (playerChipsLabel != null) {
+            playerChipsLabel.setText(messages.getString("chips.prefix") + player.getChips().getTotalChips());
+        }
+        if (aiChipsLabel != null) {
+            aiChipsLabel.setText(messages.getString("chips.prefix") + aiPlayer.getChips().getTotalChips());
+        }
+        if (remoteChipsLabel != null) {
+            remoteChipsLabel.setText(messages.getString("chips.prefix") + remotePlayer.getChips().getTotalChips());
+        }
+        if (aiBetLabel != null) {
+            aiBetLabel.setText(messages.getString("bet.prefix") + aiBet);
+        }
+    }
+
+    private void syncPlayerBets() {
+        player.setCurrentBet(currentBet);
+        aiPlayer.setCurrentBet(aiBet);
+        remotePlayer.setCurrentBet(remoteBet);
     }
 
     private void aiPlaceBet(Integer specificBet) {
         if (aiPlayer.getChips().getTotalChips() > 0) {
             int betAmount = specificBet != null ? Math.min(specificBet, aiPlayer.getChips().getTotalChips()) : aiStrategy.placeBet(aiPlayer.getChips().getTotalChips(), deck);
             aiBet = betAmount;
-            aiPlayer.getChips().removeChips(betAmount);
-            aiBetLabel.setText(messages.getString("bet.prefix") + aiBet);
+            aiPlayer.setChips(aiPlayer.getChips().removeChips(betAmount));
+            aiPlayer.setCurrentBet(aiBet);
+            updateChipLabels();
             messageLabel.setText(messages.getString("ai.bets") + aiBet + " chips!");
             gameLog.logBet("Scurvy Dog", aiBet, aiPlayer.getChips().getTotalChips());
         } else {
             aiBet = 0;
-            aiBetLabel.setText(messages.getString("bet.prefix") + aiBet);
+            aiPlayer.setCurrentBet(aiBet);
+            updateChipLabels();
             messageLabel.setText(messages.getString("ai.nochips"));
         }
     }
@@ -811,6 +832,7 @@ public class BlackJackGUI extends Application {
         currentBet = 0;
         aiBet = 0;
         remoteBet = 0;
+        syncPlayerBets();
         player.clearHands();
         dealer.clearHands();
         aiPlayer.clearHands();
@@ -822,7 +844,7 @@ public class BlackJackGUI extends Application {
         remoteCards.getChildren().clear();
         isDealerTurn = false;
         isPlayerTurn = false;
-        dealButton.setDisable(false);
+        dealButton.setDisable(true);
         hitButton.setDisable(true);
         standButton.setDisable(true);
         aiPlayButton.setDisable(true);
@@ -830,6 +852,7 @@ public class BlackJackGUI extends Application {
         doubleDownButton.setDisable(true);
         messageLabel.setText(messages.getString("newgame.message"));
         enableBettingButtons();
+        updateChipLabels();
         gameLog.log("Game restarted. All hands and game state have been reset.");
         if (isMultiplayer && isHost) sendGameState();
     }
@@ -847,13 +870,13 @@ public class BlackJackGUI extends Application {
             statsTracker.recordGame(false, currentBet, "Bust");
             gameLog.logGameOutcome("Captain", "lost", -currentBet);
         } else if (dealerValue > 21 || playerValue > dealerValue) {
-            player.getChips().addChips(currentBet * 2);
+            player.setChips(player.getChips().addChips(currentBet * 2));
             resultMessage.append(messages.getString("player.wins"));
             statsTracker.recordGame(true, currentBet, "Win");
             gameLog.logGameOutcome("Captain", "won", currentBet * 2);
             playVoice("ye_win.mp3");
         } else if (playerValue == dealerValue) {
-            player.getChips().addChips(currentBet);
+            player.setChips(player.getChips().addChips(currentBet));
             resultMessage.append(messages.getString("player.ties"));
             statsTracker.recordGame(false, currentBet, "Tie");
             gameLog.logGameOutcome("Captain", "tied", currentBet);
@@ -868,12 +891,12 @@ public class BlackJackGUI extends Application {
             statsTracker.recordGame(false, aiBet, "Bust");
             gameLog.logGameOutcome("Scurvy Dog", "lost", -aiBet);
         } else if (dealerValue > 21 || aiValue > dealerValue) {
-            aiPlayer.getChips().addChips(aiBet * 2);
+            aiPlayer.setChips(aiPlayer.getChips().addChips(aiBet * 2));
             resultMessage.append(messages.getString("ai.wins"));
             statsTracker.recordGame(true, aiBet, "Win");
             gameLog.logGameOutcome("Scurvy Dog", "won", aiBet * 2);
         } else if (aiValue == dealerValue) {
-            aiPlayer.getChips().addChips(aiBet);
+            aiPlayer.setChips(aiPlayer.getChips().addChips(aiBet));
             resultMessage.append(messages.getString("ai.ties"));
             statsTracker.recordGame(false, aiBet, "Tie");
             gameLog.logGameOutcome("Scurvy Dog", "tied", aiBet);
@@ -889,12 +912,12 @@ public class BlackJackGUI extends Application {
                 statsTracker.recordGame(false, remoteBet, "Bust");
                 gameLog.logGameOutcome("Remote Pirate", "lost", -remoteBet);
             } else if (dealerValue > 21 || remoteValue > dealerValue) {
-                remotePlayer.getChips().addChips(remoteBet * 2);
+                remotePlayer.setChips(remotePlayer.getChips().addChips(remoteBet * 2));
                 resultMessage.append(messages.getString("remote.wins"));
                 statsTracker.recordGame(true, remoteBet, "Win");
                 gameLog.logGameOutcome("Remote Pirate", "won", remoteBet * 2);
             } else if (remoteValue == dealerValue) {
-                remotePlayer.getChips().addChips(remoteBet);
+                remotePlayer.setChips(remotePlayer.getChips().addChips(remoteBet));
                 resultMessage.append(messages.getString("remote.ties"));
                 statsTracker.recordGame(false, remoteBet, "Tie");
                 gameLog.logGameOutcome("Remote Pirate", "tied", remoteBet);
@@ -908,8 +931,11 @@ public class BlackJackGUI extends Application {
         currentBet = 0;
         aiBet = 0;
         remoteBet = 0;
+        syncPlayerBets();
 
         updateChipLabels();
+        enableBettingButtons();
+        dealButton.setDisable(true);
         messageLabel.setText(resultMessage.toString());
         if (isMultiplayer && isHost) sendGameState();
     }
@@ -926,7 +952,9 @@ public class BlackJackGUI extends Application {
     private void placeBet(int amount) {
         if (player.getChips().hasEnough(amount)) {
             currentBet += amount;
-            player.getChips().removeChips(amount);
+            player.setChips(player.getChips().removeChips(amount));
+            player.setCurrentBet(currentBet);
+            updateChipLabels();
             messageLabel.setText(messages.getString("player.bets") + amount + "!");
             dealButton.setDisable(false);
             splitButton.setDisable(!player.canSplit());
@@ -955,7 +983,9 @@ public class BlackJackGUI extends Application {
             int maxBet = player.getChips().maxBet();
             if (maxBet > 0) {
                 currentBet = maxBet;
-                player.getChips().removeChips(maxBet);
+                player.setChips(player.getChips().removeChips(maxBet));
+                player.setCurrentBet(currentBet);
+                updateChipLabels();
                 messageLabel.setText(player.getName() + " " + messages.getString("maxbet.message") + currentBet + " chips!");
                 disableBettingButtons();
                 dealButton.setDisable(false);
@@ -989,18 +1019,19 @@ public class BlackJackGUI extends Application {
     }
 
     private void resetGame() {
-        player.getChips().resetChips(1000);
-        aiPlayer.getChips().resetChips(1000);
-        remotePlayer.getChips().resetChips(1000);
+        player.setChips(player.getChips().resetChips(1000));
+        aiPlayer.setChips(aiPlayer.getChips().resetChips(1000));
+        remotePlayer.setChips(remotePlayer.getChips().resetChips(1000));
         currentBet = 0;
         aiBet = 0;
         remoteBet = 0;
+        syncPlayerBets();
         updateChipLabels();
         isDealerTurn = false;
         isPlayerTurn = false;
         restartGame();
         startNewGameButton.setDisable(true);
-        dealButton.setDisable(false);
+        dealButton.setDisable(true);
         enableBettingButtons();
         messageLabel.setText(messages.getString("welcome.message"));
         displayCards();
