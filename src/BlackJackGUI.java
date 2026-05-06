@@ -251,9 +251,14 @@ public class BlackJackGUI extends Application {
                 BackgroundPosition.CENTER, BackgroundSize.DEFAULT);
         mainLayout.setBackground(new Background(background));
 
+        ScrollPane scrollPane = new ScrollPane(mainLayout);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("game-scroll-pane");
+        scrollPane.setStyle("-fx-background: #2b1e0f; -fx-background-color: #2b1e0f;");
+
         stage.getIcons().add(new Image("https://raw.githubusercontent.com/github/explore/main/topics/java/java.png"));
 
-        Scene scene = new Scene(mainLayout, 1200, 800);
+        Scene scene = new Scene(scrollPane, 1200, 800);
         scene.getStylesheets().add("file:resources/css/style.css");
         stage.setScene(scene);
         stage.setTitle(messages.getString("game.title"));
@@ -986,7 +991,8 @@ public class BlackJackGUI extends Application {
             player.setChips(player.getChips().removeChips(amount));
             player.setCurrentBet(currentBet);
             updateChipLabels();
-            messageLabel.setText(messages.getString("player.bets") + amount + "!");
+            messageLabel.setText(messages.getString("player.bets") + amount + "! "
+                    + messages.getString("player.bet.total") + currentBet + ".");
             dealButton.setDisable(false);
             splitButton.setDisable(!player.canSplit());
             doubleDownButton.setDisable(!player.canDoubleDown());
