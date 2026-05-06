@@ -122,7 +122,7 @@ public class BlackJackGUI extends Application {
 
     @Override
     public void start(Stage stage) {
-        gameLog = new GameLog("resources/logs/game_log.txt");
+        gameLog = new GameLog("game_log.txt");
         messages = ResourceBundle.getBundle("lang.en", Locale.getDefault());
 
         loadPlaylist();
