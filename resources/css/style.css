@@ -2,6 +2,11 @@
     -fx-background-color: #2b1e0f; /* Dark wood brown */
 }
 
+.game-scroll-pane,
+.game-scroll-pane > .viewport {
+    -fx-background-color: #2b1e0f;
+}
+
 .label-pirate {
     -fx-font-family: "Arial Black";
     -fx-font-size: 18px;
