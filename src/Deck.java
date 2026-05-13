@@ -225,29 +225,36 @@ public class Deck {
             gameLog.logError("Requested " + numDecks + " decks exceeds max " + maxCards, null);
             throw new IllegalArgumentException("Too many decks for max capacity.");
         }
+        String[] ranks = null;
         try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            List<String> read = new ArrayList<>();
             String line;
             while ((line = br.readLine()) != null) {
-                String rank = line.trim();
-                if (!rank.isEmpty()) {
-                    String[] suits = {"Hearts", "Diamonds", "Clubs", "Spades"};
-                    for (int i = 0; i < numDecks; i++) {
-                        for (String suit : suits) {
-                            int value = Card.calculateCardValue(rank);
-                            Card card = new Card(rank, suit, value);
-                            if (random.nextDouble() < 0.01) card.markAsSuspicious();
-                            cards.add(card);
-                            wearCount.put(card.toString(), 0);
-                            dispersionMap.put(card.toString(), 0);
-                        }
-                    }
+                String r = line.trim();
+                if (!r.isEmpty()) read.add(r);
+            }
+            if (!read.isEmpty()) ranks = read.toArray(new String[0]);
+        } catch (IOException e) {
+            gameLog.logError("Deck file not found or unreadable; using built-in 52-card spec: " + filePath, e);
+        }
+        // Built-in fallback so the game still works when deck.txt is missing.
+        if (ranks == null) {
+            ranks = new String[]{"2","3","4","5","6","7","8","9","10","J","Q","K","A"};
+        }
+        String[] suits = {"Hearts", "Diamonds", "Clubs", "Spades"};
+        for (int i = 0; i < numDecks; i++) {
+            for (String rank : ranks) {
+                for (String suit : suits) {
+                    int value = Card.calculateCardValue(rank);
+                    Card card = new Card(rank, suit, value);
+                    if (random.nextDouble() < 0.01) card.markAsSuspicious();
+                    cards.add(card);
+                    wearCount.put(card.toString(), 0);
+                    dispersionMap.put(card.toString(), 0);
                 }
             }
-        } catch (IOException e) {
-            gameLog.logError("Error reading deck file: " + filePath, e);
-            return;
         }
-        gameLog.logDeckOperation("Deck loaded from " + filePath + " (" + numDecks + " decks)", cards.size());
+        gameLog.logDeckOperation("Deck loaded (" + numDecks + " decks, " + cards.size() + " cards)", cards.size());
         notifyObservers();
     }
 
@@ -477,10 +484,10 @@ public class Deck {
                 shuffle();
                 burnCards(1);
             }
-            if (detectTamper()) {
-                gameLog.logError("Tamper detected before dealing to " + player.getName(), null);
-                shuffle();
-            }
+            // NOTE: tamper detection used to auto-shuffle on EVERY deal because
+            // removing a card naturally changes the deck hash. It's now a pure
+            // log-only audit; legitimate dealing is no longer treated as tamper.
+            // The signature is refreshed below to track the new known-good state.
             Instant now = clock.instant();
             checkDealTiming(now);
             lastDealTime = now;
@@ -489,6 +496,9 @@ public class Deck {
             synchronized (cards) {
                 dealtCard = cards.remove(cards.size() - 1);
                 dealtCards.add(dealtCard);
+                // Refresh known-good signature so detectTamper() doesn't fire
+                // on the very next call simply because we legitimately dealt.
+                lastDeckSignature = computeDeckHash();
             }
             synchronized (dealtHistory) {
                 dealtHistory.add(new DealRecord(dealtCard, player.getName(), betAmount));

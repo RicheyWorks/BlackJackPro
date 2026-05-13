@@ -925,29 +925,59 @@ public class BlackJackGUI extends Application {
             return formatResultLine(displayName, messages.getString("round.noBet"));
         }
 
-        int participantValue = participant.calculateHandValue(participant.getCurrentHand());
         int dealerValue = dealer.calculateHandValue(dealer.getCurrentHand());
+        boolean dealerBlackjack = dealer.getCurrentHand().size() == 2 && dealerValue == 21;
 
-        if (participantValue > 21) {
-            statsTracker.recordGame(false, bet, "Bust");
-            gameLog.logGameOutcome(displayName, "lost", -bet);
-            return formatResultLine(displayName, messages.getString("round.bust"));
-        } else if (dealerValue > 21 || participantValue > dealerValue) {
-            participant.setChips(participant.getChips().addChips(bet * 2));
-            statsTracker.recordGame(true, bet, "Win");
-            gameLog.logGameOutcome(displayName, "won", bet * 2);
-            if (playWinningVoice) playVoice("ye_win.mp3");
-            return formatResultLine(displayName, messages.getString("round.win"));
-        } else if (participantValue == dealerValue) {
-            participant.setChips(participant.getChips().addChips(bet));
-            statsTracker.recordGame(false, bet, "Tie");
-            gameLog.logGameOutcome(displayName, "tied", bet);
-            return formatResultLine(displayName, messages.getString("round.push"));
-        } else {
-            statsTracker.recordGame(false, bet, "Loss");
-            gameLog.logGameOutcome(displayName, "lost", -bet);
-            return formatResultLine(displayName, messages.getString("round.loss"));
+        // Evaluate EVERY hand the participant holds (splits produce >1 hand).
+        // Split-aware: the original code only looked at getCurrentHand() and
+        // silently dropped any other hand's outcome. Each hand is settled on
+        // its own merits using the same `bet` (matched on split / double).
+        List<List<Card>> allHands = participant.getHands();
+        StringBuilder breakdown = new StringBuilder();
+        boolean anyWin = false;
+        for (int hi = 0; hi < allHands.size(); hi++) {
+            List<Card> hand = allHands.get(hi);
+            int participantValue = participant.calculateHandValue(hand);
+            boolean naturalBJ = allHands.size() == 1 && hand.size() == 2 && participantValue == 21;
+            String tag = allHands.size() > 1 ? ("Hand " + (hi + 1) + ": ") : "";
+
+            if (participantValue > 21) {
+                statsTracker.recordGame(false, bet, "Bust");
+                gameLog.logGameOutcome(displayName, "lost", -bet);
+                breakdown.append(tag).append(messages.getString("round.bust"));
+            } else if (naturalBJ && !dealerBlackjack) {
+                // 3:2 blackjack payout = stake + 1.5x stake
+                int payout = bet + (bet * 3) / 2;
+                participant.setChips(participant.getChips().addChips(payout));
+                statsTracker.recordGame(true, bet, "Blackjack");
+                gameLog.logGameOutcome(displayName, "won", payout);
+                if (playWinningVoice) playVoice("ye_win.mp3");
+                anyWin = true;
+                breakdown.append(tag).append("Blackjack! +").append((bet * 3) / 2);
+            } else if (dealerBlackjack && !naturalBJ) {
+                statsTracker.recordGame(false, bet, "Loss");
+                gameLog.logGameOutcome(displayName, "lost", -bet);
+                breakdown.append(tag).append(messages.getString("round.loss"));
+            } else if (dealerValue > 21 || participantValue > dealerValue) {
+                participant.setChips(participant.getChips().addChips(bet * 2));
+                statsTracker.recordGame(true, bet, "Win");
+                gameLog.logGameOutcome(displayName, "won", bet * 2);
+                anyWin = true;
+                breakdown.append(tag).append(messages.getString("round.win"));
+            } else if (participantValue == dealerValue) {
+                participant.setChips(participant.getChips().addChips(bet));
+                statsTracker.recordGame(false, bet, "Tie");
+                gameLog.logGameOutcome(displayName, "tied", bet);
+                breakdown.append(tag).append(messages.getString("round.push"));
+            } else {
+                statsTracker.recordGame(false, bet, "Loss");
+                gameLog.logGameOutcome(displayName, "lost", -bet);
+                breakdown.append(tag).append(messages.getString("round.loss"));
+            }
+            if (hi < allHands.size() - 1) breakdown.append(" / ");
         }
+        if (anyWin && playWinningVoice) playVoice("ye_win.mp3");
+        return formatResultLine(displayName, breakdown.toString());
     }
 
     private String formatResultLine(String displayName, String outcome) {
