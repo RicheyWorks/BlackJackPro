@@ -1,9 +1,19 @@
 bin/
 *.class
 resources/logs/
+resources/saves/
 *.log
 .classpath
 .project
 .settings/
 .idea/
 .vscode/
+
+# Large binary assets — host these outside git
+resources/music/*.mp3
+resources/music/*.wav
+resources/music/*.ogg
+resources/music/*.m4a
+
+# Local save data (BlackJackPro persists bankroll here)
+resources/save.txt
