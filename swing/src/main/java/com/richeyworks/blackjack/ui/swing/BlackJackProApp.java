@@ -612,7 +612,8 @@ public final class BlackJackProApp extends JFrame {
             bHint.setEnabled(playing);
             table.repaint();
 
-            if (betting && engine.bankroll() == 0 && engine.pendingBet() == 0) {
+            if (betting && engine.bankroll() == 0 && engine.pendingBet() == 0
+                    && sideBets.pending() == 0) {
                 int yes = JOptionPane.showConfirmDialog(this,
                         "You're out of chips! Reload $1000?", "Bust",
                         JOptionPane.YES_NO_OPTION);
