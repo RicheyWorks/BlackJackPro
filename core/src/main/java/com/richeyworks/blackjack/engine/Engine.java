@@ -6,14 +6,6 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Random;
 
-/**
- * Pure rules engine. Owns the table state, accepts player actions, drives
- * dealer play, and settles every hand. UI code reads state through accessors
- * and never mutates fields directly.
- *
- * Single-threaded; the UI must marshal calls onto whichever thread owns the
- * engine (EDT for the Swing UI).
- */
 public final class Engine {
 
     private final BlackjackRules rules;
@@ -41,10 +33,6 @@ public final class Engine {
         stats.peakBankroll = Math.max(stats.peakBankroll, startingBankroll);
     }
 
-    /* ----------------------------------------------------------------------- */
-    /* Accessors                                                               */
-    /* ----------------------------------------------------------------------- */
-
     public BlackjackRules rules()      { return rules; }
     public Shoe           shoe()       { return shoe; }
     public Hand           dealer()     { return dealer; }
@@ -58,17 +46,12 @@ public final class Engine {
     public int            insuranceBet(){ return insuranceBet; }
     public Deque<String>  log()        { return log; }
 
-    /** Direct bankroll setter for restore/load. Avoid in gameplay paths. */
     public void setBankroll(int b) { this.bankroll = b; }
 
     void log(String msg) {
         if (log.size() >= 250) log.pollFirst();
         log.addLast(msg);
     }
-
-    /* ----------------------------------------------------------------------- */
-    /* Legality probes — UI uses these to enable/disable buttons               */
-    /* ----------------------------------------------------------------------- */
 
     public boolean canBet(int amount) {
         return phase == Phase.BETTING && amount > 0 && amount <= bankroll;
@@ -95,10 +78,6 @@ public final class Engine {
                 && !h.fromSplit() && !h.doubled();
     }
 
-    /* ----------------------------------------------------------------------- */
-    /* Betting                                                                 */
-    /* ----------------------------------------------------------------------- */
-
     public void addBet(int amount) {
         if (!canBet(amount)) throw new IllegalStateException("cannot bet " + amount);
         bankroll  -= amount;
@@ -111,15 +90,10 @@ public final class Engine {
         pendingBet = 0;
     }
 
-    /* ----------------------------------------------------------------------- */
-    /* Round flow                                                              */
-    /* ----------------------------------------------------------------------- */
-
     public void deal() {
         if (!canDeal()) throw new IllegalStateException("cannot deal");
         if (shoe.needsShuffle()) shoe.reshuffle();
 
-        // reset table
         for (Hand h : player) h.reset();
         player.clear();
         dealer.reset();
@@ -133,7 +107,6 @@ public final class Engine {
         phase = Phase.DEALING;
         stats.hands++;
 
-        // P, D, P, D
         first.add(shoe.deal());
         dealer.add(shoe.deal());
         first.add(shoe.deal());
@@ -164,7 +137,6 @@ public final class Engine {
     private void afterInsuranceCheck() {
         boolean dealerBJ = dealer.value() == 21 && dealer.size() == 2;
         if (dealerBJ) {
-            // Pay insurance if taken (stake + 2:1 = 3x cost)
             if (insuranceBet > 0) {
                 int payout = insuranceBet + rules.insurancePayout(insuranceBet);
                 bankroll  += payout;
@@ -176,7 +148,7 @@ public final class Engine {
             return;
         }
         if (insuranceBet > 0) {
-            insuranceBet = 0; // lost
+            insuranceBet = 0;
         }
         if (player.get(0).isBlackjack()) {
             phase = Phase.SETTLE;
@@ -229,7 +201,10 @@ public final class Engine {
         if (rules.splitAcesOneCard && h.first().rank() == Rank.ACE) {
             h.markSplitAce();
             n.markSplitAce();
-            advanceHand();
+            // Both hands are frozen; advanceHand() loops past every splitAce
+            // hand on its own, so a single call moves to the next playable
+            // hand (or the dealer). Calling it twice skipped a hand and, in the
+            // common A,A case, ran playDealer()/settle() twice -- double-paying.
             advanceHand();
         }
     }
@@ -254,7 +229,7 @@ public final class Engine {
                 playDealer();
                 return;
             }
-            if (active().splitAce()) continue;   // single-card frozen hand
+            if (active().splitAce()) continue;
             return;
         }
     }
