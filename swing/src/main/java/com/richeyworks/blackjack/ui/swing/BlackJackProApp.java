@@ -2,6 +2,7 @@ package com.richeyworks.blackjack.ui.swing;
 
 import com.richeyworks.blackjack.achievement.AchievementService;
 import com.richeyworks.blackjack.engine.BasicStrategy;
+import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.engine.SessionStats;
@@ -9,7 +10,9 @@ import com.richeyworks.blackjack.media.MusicService;
 import com.richeyworks.blackjack.media.SoundFx;
 import com.richeyworks.blackjack.persist.SaveManager;
 import com.richeyworks.blackjack.plugin.PluginRegistry;
+import com.richeyworks.blackjack.plugin.SideBetManager;
 import com.richeyworks.blackjack.plugin.TableTheme;
+import com.richeyworks.blackjack.plugins.builtin.HiLoCounterAi;
 import com.richeyworks.blackjack.settings.GameSettings;
 import com.richeyworks.blackjack.steam.SteamBridge;
 
@@ -74,6 +77,14 @@ public final class BlackJackProApp extends JFrame {
     private JButton bDeal, bHit, bStand, bDouble, bSplit, bSurrender, bHint;
     private JButton bIns, bNoIns;
     private JButton[] chipBtns;
+    private JButton bSide;
+    private final JLabel sideLabel = new JLabel();
+    private final SideBetManager sideBets;
+    private String sideMsg = "";
+    private final HiLoCounterAi counter;
+    private int lastShoeRemaining;
+    private boolean showCount = true;
+    private final JLabel countLabel = new JLabel();
 
     private static final int[] CHIP_VALUES = {1, 5, 25, 100, 500};
 
@@ -94,6 +105,12 @@ public final class BlackJackProApp extends JFrame {
         this.settings     = settings;
         this.achievements = achievements;
         this.theme        = theme;
+        this.sideBets     = new SideBetManager(
+                plugins.sideBets().isEmpty() ? null : plugins.sideBets().get(0));
+        HiLoCounterAi hilo = null;
+        for (var ai : plugins.aiStrategies()) if (ai instanceof HiLoCounterAi h) { hilo = h; break; }
+        this.counter = hilo;
+        this.lastShoeRemaining = engine.shoe().remaining();
 
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         save.load(engine);
@@ -159,6 +176,13 @@ public final class BlackJackProApp extends JFrame {
         c.gridx = CHIP_VALUES.length;
         p.add(clear, c);
 
+        if (sideBets.available()) {
+            bSide = pirateButton("21+3 +$5");
+            bSide.addActionListener(e -> placeSideBet(5));
+            c.gridx = CHIP_VALUES.length + 1;
+            p.add(bSide, c);
+        }
+
         bDeal       = pirateButton("Deal");
         bHit        = pirateButton("Hit");
         bStand      = pirateButton("Stand");
@@ -169,7 +193,7 @@ public final class BlackJackProApp extends JFrame {
         bIns        = pirateButton("Insure");
         bNoIns      = pirateButton("Decline");
 
-        bDeal.addActionListener(e -> safe(engine::deal, "Place a bet first."));
+        bDeal.addActionListener(e -> dealRound());
         bHit.addActionListener(e -> safe(engine::hit, null));
         bStand.addActionListener(e -> safe(engine::stand, null));
         bDouble.addActionListener(e -> safe(engine::doubleDown, "Cannot double."));
@@ -196,7 +220,12 @@ public final class BlackJackProApp extends JFrame {
         betLabel.setForeground(new Color(0xF8E9A1));
         shoeLabel.setForeground(new Color(0xBDBDBD));
         bankLabel.setFont(hud); betLabel.setFont(hud);
-        info.add(bankLabel); info.add(betLabel); info.add(shoeLabel);
+        sideLabel.setForeground(new Color(0xC9A227));
+        countLabel.setForeground(new Color(0x9FE0B0));
+        info.add(bankLabel); info.add(betLabel);
+        if (sideBets.available()) info.add(sideLabel);
+        info.add(shoeLabel);
+        if (counter != null) info.add(countLabel);
         c.gridy = 2;
         p.add(info, c);
 
@@ -224,6 +253,10 @@ public final class BlackJackProApp extends JFrame {
         JCheckBoxMenuItem h17 = new JCheckBoxMenuItem("Dealer hits soft 17");
         h17.setState(engine.rules().dealerHitsSoft17);
         h17.addActionListener(e -> engine.rules().dealerHitsSoft17 = h17.getState());
+        JCheckBoxMenuItem countToggle = new JCheckBoxMenuItem("Show Hi-Lo count");
+        countToggle.setState(showCount);
+        countToggle.setEnabled(counter != null);
+        countToggle.addActionListener(e -> { showCount = countToggle.getState(); updateUi(statusBar.getText()); });
         JMenuItem mute = new JMenuItem(music.isMuted() ? "Unmute music" : "Mute music");
         mute.addActionListener(e -> {
             music.toggleMute();
@@ -231,7 +264,7 @@ public final class BlackJackProApp extends JFrame {
         });
         JMenuItem nextTrack = new JMenuItem("Next track");
         nextTrack.addActionListener(e -> music.next());
-        opts.add(prefs); opts.addSeparator(); opts.add(h17);
+        opts.add(prefs); opts.addSeparator(); opts.add(h17); opts.add(countToggle);
         opts.addSeparator(); opts.add(mute); opts.add(nextTrack);
 
         JMenu themeMenu = new JMenu("Theme");
@@ -322,7 +355,43 @@ public final class BlackJackProApp extends JFrame {
 
     private void clearBet() {
         engine.clearBet();
+        int refund = sideBets.clear();
+        if (refund > 0) engine.setBankroll(engine.bankroll() + refund);
+        sideMsg = "";
         updateUi("Bet cleared.");
+    }
+
+    private void placeSideBet(int v) {
+        if (engine.phase() != Phase.BETTING) return;
+        int added = sideBets.add(v, engine.bankroll());
+        if (added == 0) { flash("Not enough chips for the side bet."); return; }
+        engine.setBankroll(engine.bankroll() - added);
+        sideMsg = "";
+        sfx.chipClick();
+        updateUi("21+3 side bet: $" + sideBets.pending());
+    }
+
+    /** Deal a fresh round, then resolve any 21+3 side bet on the opening cards. */
+    private void dealRound() {
+        try {
+            engine.deal();
+            resolveSideBet();
+            sfx.cardSnap();
+            postAction();
+        } catch (RuntimeException ex) {
+            flash("Place a bet first.");
+        }
+    }
+
+    private void resolveSideBet() {
+        if (!sideBets.available() || sideBets.pending() == 0) return;
+        int stake  = sideBets.pending();
+        int payout = sideBets.resolve(engine.hands().get(0).cards(), engine.dealer().first());
+        engine.stats().totalWagered  += stake;
+        engine.stats().totalReturned += payout;
+        engine.setBankroll(engine.bankroll() + payout);
+        if (payout > 0) { sfx.winSting(); sideMsg = "21+3 " + sideBets.lastOutcome() + ": +$" + (payout - stake); }
+        else            { sideMsg = "21+3: no win (-$" + stake + ")"; }
     }
 
     private void takeInsurance(boolean accept) {
@@ -387,6 +456,15 @@ public final class BlackJackProApp extends JFrame {
         if (playerWon)       winStreak++;
         else if (playerLost) winStreak = 0;
         achievements.setProgress("survived_bust_streak", winStreak);
+
+        // Feed the Hi-Lo counter every card revealed this round. After a reshuffle
+        // the shoe's card count jumps back up, so reset before counting the fresh deal.
+        if (counter != null) {
+            if (engine.shoe().remaining() > lastShoeRemaining) counter.resetCount();
+            for (var hh : engine.hands()) for (Card cc : hh.cards()) counter.observe(cc);
+            for (Card cc : engine.dealer().cards()) counter.observe(cc);
+            lastShoeRemaining = engine.shoe().remaining();
+        }
         previousWins     = s.wins;
         previousBankroll = engine.bankroll();
     }
@@ -488,8 +566,12 @@ public final class BlackJackProApp extends JFrame {
         engine.stats().reset();
         processedHands = 0;
         winStreak      = 0;
+        sideBets.clear();
+        sideMsg = "";
         engine.shoe().reshuffle();
         engine.clearBet();
+        if (counter != null) counter.resetCount();
+        lastShoeRemaining = engine.shoe().remaining();
         updateUi("New session. Place your bet.");
     }
 
@@ -506,6 +588,18 @@ public final class BlackJackProApp extends JFrame {
             boolean betting = engine.phase() == Phase.BETTING;
             boolean playing = engine.phase() == Phase.PLAYER;
             boolean insure  = engine.phase() == Phase.INSURANCE;
+            if (sideBets.available()) {
+                if (betting && sideBets.pending() > 0) sideLabel.setText("21+3 bet: $" + sideBets.pending());
+                else if (!sideMsg.isEmpty())           sideLabel.setText(sideMsg);
+                else                                   sideLabel.setText("21+3 ready");
+                if (bSide != null) bSide.setEnabled(betting);
+            }
+            if (counter != null) {
+                if (showCount) {
+                    int dr = Math.max(1, engine.shoe().remaining() / 52);
+                    countLabel.setText(String.format("Count: %+d (TC %+.1f)", counter.runningCount(), counter.trueCount(dr)));
+                } else countLabel.setText("");
+            }
             for (JButton b : chipBtns) b.setEnabled(betting);
             bDeal.setEnabled(engine.canDeal());
             bHit.setEnabled(engine.canHit());

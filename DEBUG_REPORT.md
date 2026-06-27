@@ -3,7 +3,9 @@
 **Scope:** `/debug everything` — full sweep of the built, shipping code (`core`, `swing`, `gdx-core`, `gdx-desktop`) plus a read-through of the Android launcher.
 **Branch:** `claude/gradle-foundation`
 **Toolchain:** Temurin JDK 21, Gradle 8.10 (wrapper).
-**Result:** 6 bugs fixed, 5 regression tests added, 4 findings reported. Full suite green — **45 tests** (was 40).
+**Result:** 6 bugs fixed, 2 dormant plugin features wired up, 16 tests added. Full suite green — **56 tests** (was 40).
+
+> **Update:** after the initial debug pass, the two dead plugin features called out below (21+3 side bet, Hi-Lo counter) were wired into the Swing UI — see "Features wired up."
 
 ---
 
@@ -127,11 +129,21 @@ The `survived_bust_streak` achievement ("win 5 in a row") was registered but no 
 
 ---
 
+## Features wired up
+
+The audit found two plugin features that were loaded but disconnected from gameplay. Both have since been wired into the Swing UI (feature work, done after the bug-fix pass):
+
+- **21+3 side bet.** A "21+3 +$5" control places a stake during betting; on the deal it is resolved against the opening two cards plus the dealer up-card (suited trips 100:1 down to a flush 5:1), the payout lands in the bankroll, and the HUD shows the outcome. The money flow lives in a Swing-free `SideBetManager` so it is unit-tested (6 tests); stake and return flow through `totalWagered`/`totalReturned`.
+- **Hi-Lo counter.** A running count is fed every card revealed at round end (reset on shoe reshuffle) and shown in the HUD as `Count: +N (TC ±X.X)`, with an Options-menu toggle. The counting logic now has 5 tests (it had none).
+
+Caveat: both display in the live GUI, which is not headlessly testable — the underlying logic is. A manual smoke test is worthwhile.
+
+---
+
 ## Findings (reported, not changed)
 
 These are gaps or judgment calls rather than defects, left for a product decision:
 
-- **21+3 side bet and Hi-Lo AI are dead features.** Both are loaded and 21+3 is fully unit-tested, but neither is wired into gameplay — they only surface as a *count* in the Plugin Manager dialog. There is no UI to place a side bet or have the AI advise/play. Wiring them is feature work.
 - **`Animator` is dead code** — never referenced outside its own file.
 - **Line-ending churn.** The working tree was full of phantom CRLF-only diffs with no `.gitattributes`. Added one (`* text=auto eol=lf`, `.bat` as CRLF, assets binary); run `git add --renormalize .` once to flatten the existing churn.
 - **Stale `build/` directories** from a prior Windows build sit in the tree; they are git-ignored and harmless.
@@ -141,16 +153,31 @@ These are gaps or judgment calls rather than defects, left for a product decisio
 ## Verification
 
 - Provisioned Temurin JDK 21 (repo targets JDK 21 for `core`/`swing`; the sandbox shipped only JDK 11).
-- Full Gradle build green: `:core:test :swing:test :gdx-desktop:classes` → **BUILD SUCCESSFUL**, **45 tests, 0 failures** (was 40).
-- 5 new tests added: `SplitAceSettlementTest` (1) and `SettlementTest` (4 — 3:2 natural, bust, money-conservation over 300 rounds, insurance ledger).
+- Full Gradle build green: `:core:test :swing:test :gdx-desktop:classes` → **BUILD SUCCESSFUL**, **56 tests, 0 failures** (was 40).
+- 16 new tests added: `SplitAceSettlementTest` (1), `SettlementTest` (4 — 3:2 natural, bust, money-conservation over 300 rounds, insurance ledger), `SideBetManagerTest` (6), and `HiLoCounterAiTest` (5).
 - Each new core test was **mutation-checked**: breaking the corresponding production logic (e.g. paying blackjack 1:1, removing the insurance ledger line, restoring the double `advanceHand()`) makes the matching test fail, confirming the tests have teeth.
 
 ## Files changed
 
+Bug fixes:
+
 - `core/.../engine/Engine.java` — split-aces + insurance fixes
-- `swing/.../ui/swing/BlackJackProApp.java` — round-complete detection, win-streak achievement
+- `swing/.../ui/swing/BlackJackProApp.java` — round-complete detection, win-streak achievement (also hosts the two new features below)
 - `swing/.../ui/swing/TablePanel.java` — hole-card reveal
 - `swing/.../plugin/PluginRegistry.java` — plugin de-duplication
 - `gdx-core/.../gdx/TableScreen.java` — hole-card reveal
-- `core/.../test/.../SplitAceSettlementTest.java`, `SettlementTest.java` — new tests
+
+Features wired up:
+
+- `swing/.../plugin/SideBetManager.java` — new, Swing-free 21+3 orchestration
+- `swing/.../ui/swing/BlackJackProApp.java` — 21+3 + Hi-Lo counter UI wiring
+
+Tests added:
+
+- `core/.../test/.../SplitAceSettlementTest.java`, `SettlementTest.java`
+- `swing/.../test/.../plugin/SideBetManagerTest.java`
+- `swing/.../test/.../plugins/builtin/HiLoCounterAiTest.java`
+
+Housekeeping:
+
 - `.gitattributes` — line-ending normalization
