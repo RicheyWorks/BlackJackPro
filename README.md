@@ -46,7 +46,6 @@ gradlew :swing:jpackage -Pjpackage
 - **Java 21** (Swing), **Java 17** (libGDX/Android)
 - **Gradle** multi-module: `core`, `swing`, `gdx-core`, `gdx-desktop`, `android`
 - **libGDX 1.12.1**, **JUnit 5**, **GitHub Actions**
-- `legacy/` — original pre-refactor sources, reference only (not built)
 
 ## Layout
 
@@ -56,7 +55,9 @@ swing/         Desktop UI, plugins, media, Steam bridge
 gdx-core/      libGDX game + TableScreen
 gdx-desktop/   LWJGL3 launcher
 android/       APK launcher
-legacy/        Archived original code
 resources/     Shared assets (deck, lang, css)
 ```
-License: TBD — pick before publishing (MIT/Apache-2.0 or commercial).
+
+## License
+
+Released under the [MIT License](LICENSE) — © 2026 RicheyWorks.
