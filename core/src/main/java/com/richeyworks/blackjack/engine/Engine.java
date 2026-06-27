@@ -127,6 +127,7 @@ public final class Engine {
             int cost = h.bet() / 2;
             if (bankroll < cost) throw new IllegalStateException("not enough chips for insurance");
             bankroll    -= cost;
+            stats.totalWagered += cost;   // insurance is a wager; keep accounting consistent
             insuranceBet = cost;
         } else {
             insuranceBet = 0;

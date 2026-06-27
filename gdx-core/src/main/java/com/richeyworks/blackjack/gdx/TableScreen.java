@@ -149,8 +149,12 @@ public final class TableScreen extends InputAdapter implements Screen {
     }
 
     private void drawHands() {
-        // Dealer (top)
-        boolean hideHole = engine.phase().ordinal() < Phase.DEALER.ordinal();
+        // Dealer (top). Reveal the hole once the dealer acts / the round settles
+        // (mirrors the Swing fix): hide only during the player's decision phases,
+        // otherwise the synchronously-resolved dealer turn means the hole card
+        // would never be shown in the post-round view.
+        Phase phase = engine.phase();
+        boolean hideHole = phase == Phase.DEALING || phase == Phase.INSURANCE || phase == Phase.PLAYER;
         drawHand(engine.dealer(), WORLD_W / 2, WORLD_H - CARD_H - 40, false, hideHole, "Dealer");
 
         // Player hands (middle)

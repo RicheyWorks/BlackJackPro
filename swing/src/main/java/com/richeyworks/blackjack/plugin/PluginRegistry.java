@@ -49,7 +49,10 @@ public final class PluginRegistry {
                     urls.toArray(new URL[0]),
                     BlackJackPlugin.class.getClassLoader());
             for (BlackJackPlugin p : ServiceLoader.load(BlackJackPlugin.class, cl)) {
-                plugins.add(p);
+                // A child ServiceLoader also re-discovers providers on the parent
+                // classpath; keep only those actually loaded from the external JARs
+                // so built-in plugins aren't registered (and shown) twice.
+                if (p.getClass().getClassLoader() == cl) plugins.add(p);
             }
         } catch (IOException e) {
             System.err.println("Plugin discovery failed: " + e.getMessage());

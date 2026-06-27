@@ -53,13 +53,21 @@ public final class TablePanel extends JPanel {
         g2.drawString("DEALER " + (engine.rules().dealerHitsSoft17 ? "HITS" : "STANDS") + " ON SOFT 17",
                 w / 2 - 130, h - 36);
 
-        boolean hideHole = engine.phase().ordinal() < Phase.DEALER.ordinal();
+        // Hide the hole card only while the player is still acting (or during the
+        // deal / insurance prompt). Reveal it once the dealer plays, on settlement,
+        // and in the post-round BETTING view. The old check (ordinal < DEALER) also
+        // matched post-round BETTING, so the hole stayed hidden after the round --
+        // and because the engine resolves the dealer turn synchronously, the UI only
+        // repaints at BETTING, meaning the dealer's hole card was never revealed.
+        Phase phase = engine.phase();
+        boolean hideHole = phase == Phase.DEALING || phase == Phase.INSURANCE || phase == Phase.PLAYER;
         int dealerCaptionY = 110;
         g2.setColor(new Color(0xF8E9A1));
         g2.setFont(g2.getFont().deriveFont(Font.BOLD, 16f));
-        String dealerCaption = hideHole
-                ? "Dealer (showing " + (engine.dealer().isEmpty() ? 0 : engine.dealer().first().rank().value()) + ")"
-                : "Dealer (" + engine.dealer().value() + ")";
+        String dealerCaption;
+        if (engine.dealer().isEmpty()) dealerCaption = "Dealer";
+        else if (hideHole)             dealerCaption = "Dealer (showing " + engine.dealer().first().rank().value() + ")";
+        else                           dealerCaption = "Dealer (" + engine.dealer().value() + ")";
         g2.drawString(dealerCaption, w / 2 - 60, dealerCaptionY);
 
         paintHand(g2, engine.dealer(), w / 2, 130, false, hideHole);

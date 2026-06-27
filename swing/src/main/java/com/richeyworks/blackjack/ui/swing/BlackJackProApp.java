@@ -63,6 +63,8 @@ public final class BlackJackProApp extends JFrame {
 
     private int previousBankroll;
     private int previousWins;
+    private int processedHands;   // rounds already post-processed (round-complete detection)
+    private int winStreak;        // consecutive winning rounds (streak achievement)
 
     private final JLabel statusBar = new JLabel(" ");
     private final JLabel bankLabel = new JLabel();
@@ -97,6 +99,7 @@ public final class BlackJackProApp extends JFrame {
         save.load(engine);
         previousBankroll = engine.bankroll();
         previousWins     = engine.stats().wins;
+        processedHands   = engine.stats().hands;
         achievements.onUnlock(a -> {
             sfx.achievement();
             AchievementToast.show(this, a);
@@ -325,7 +328,7 @@ public final class BlackJackProApp extends JFrame {
     private void takeInsurance(boolean accept) {
         try {
             engine.takeInsurance(accept);
-            updateUi(accept ? "Insurance taken." : "Insurance declined.");
+            postAction();   // may complete the round when the dealer has blackjack
         } catch (RuntimeException ex) {
             flash(ex.getMessage());
         }
@@ -333,18 +336,26 @@ public final class BlackJackProApp extends JFrame {
 
     private void safe(Runnable action, String fallback) {
         try {
-            Phase before = engine.phase();
             action.run();
-            // Card-snap when a card was just dealt to the player or dealer
             sfx.cardSnap();
-            // Detect round end and trigger achievement processing + outcome SFX
-            if (before != Phase.BETTING && engine.phase() == Phase.BETTING) {
-                onRoundComplete();
-            }
-            updateUi(describe());
+            postAction();
         } catch (RuntimeException ex) {
             flash(fallback != null ? fallback : ex.getMessage());
         }
+    }
+
+    /**
+     * Run after any engine action. Fires {@link #onRoundComplete()} exactly once
+     * per round, keyed on the engine's hand counter so it also catches rounds
+     * that resolve during the deal (dealt naturals, dealer blackjack) or out of
+     * the insurance prompt — cases the old phase-transition check silently missed.
+     */
+    private void postAction() {
+        if (engine.phase() == Phase.BETTING && engine.stats().hands > processedHands) {
+            processedHands = engine.stats().hands;
+            onRoundComplete();
+        }
+        updateUi(describe());
     }
 
     private void onRoundComplete() {
@@ -372,6 +383,10 @@ public final class BlackJackProApp extends JFrame {
         if (playerWon && engine.dealer().isBust()) achievements.increment("survived_bust");
         achievements.setProgress("bankroll_5k",  Math.min(5000,  engine.bankroll()));
         achievements.setProgress("bankroll_10k", Math.min(10000, engine.bankroll()));
+        // Heart of Stone: 5 winning rounds in a row (a push keeps the streak alive).
+        if (playerWon)       winStreak++;
+        else if (playerLost) winStreak = 0;
+        achievements.setProgress("survived_bust_streak", winStreak);
         previousWins     = s.wins;
         previousBankroll = engine.bankroll();
     }
@@ -471,6 +486,8 @@ public final class BlackJackProApp extends JFrame {
         if (yes != JOptionPane.YES_OPTION) return;
         engine.setBankroll(1000);
         engine.stats().reset();
+        processedHands = 0;
+        winStreak      = 0;
         engine.shoe().reshuffle();
         engine.clearBet();
         updateUi("New session. Place your bet.");
