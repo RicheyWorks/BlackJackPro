@@ -37,7 +37,12 @@ application {
 sourceSets {
     main {
         resources {
-            srcDirs("src/main/resources", "${rootDir}/resources")
+            // src/main/resources is already a default resource root; only add the
+            // shared repo-level resources/ (deck, lang, css) alongside it. Adding
+            // src/main/resources again here would scan it twice and make every
+            // entry (e.g. META-INF/services) a duplicate. Excludes keep runtime
+            // junk (logs/music/saves) out of the jar.
+            srcDir("${rootDir}/resources")
             exclude("logs/**", "music/**", "saves/**", "save.txt")
         }
     }
