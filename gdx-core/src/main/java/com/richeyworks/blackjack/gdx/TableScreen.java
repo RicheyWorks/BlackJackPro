@@ -218,8 +218,6 @@ public final class TableScreen extends InputAdapter implements Screen {
         batch.end();
     }
 
-    /** The default libGDX BitmapFont has no suit glyphs, so the gdx/Android UI
-     *  shows the suit's letter (S/H/D/C) instead, coloured red/black. */
     private static String suitLetter(Card card) {
         switch (card.suit()) {
             case SPADES:   return "S";

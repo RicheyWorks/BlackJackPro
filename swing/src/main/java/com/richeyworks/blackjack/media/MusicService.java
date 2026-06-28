@@ -47,9 +47,6 @@ public final class MusicService {
             clip.open(in);
             applyVolume();
             clip.addLineListener(ev -> {
-                // Roll to the next track only when this one played to its end.
-                // A manual stop() or mute also fires STOP mid-track; those must
-                // not skip a track, so check the clip actually reached the end.
                 if (ev.getType() == LineEvent.Type.STOP) {
                     Clip src = (Clip) ev.getSource();
                     if (src.getFrameLength() > 0 && src.getFramePosition() >= src.getFrameLength()) next();

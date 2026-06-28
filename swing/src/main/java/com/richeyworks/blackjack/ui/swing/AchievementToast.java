@@ -24,6 +24,8 @@ public final class AchievementToast {
 
     private AchievementToast() {}
 
+    private static final java.util.List<JWindow> ACTIVE = new java.util.ArrayList<>();
+
     public static void show(Component owner, Achievement a) {
         Window parent = owner instanceof Window w ? w : javax.swing.SwingUtilities.getWindowAncestor(owner);
         JWindow toast = new JWindow(parent);
@@ -53,15 +55,17 @@ public final class AchievementToast {
         toast.setContentPane(panel);
         toast.pack();
 
-        // Position bottom-right of the parent (or screen)
+        int stack = 0;
+        for (JWindow w : ACTIVE) stack += w.getHeight() + 8;
         Point loc = parent == null
-                ? new Point(800, 600)
+                ? new Point(800, 600 - stack)
                 : new Point(parent.getX() + parent.getWidth() - toast.getWidth() - 24,
-                            parent.getY() + parent.getHeight() - toast.getHeight() - 80);
+                            parent.getY() + parent.getHeight() - toast.getHeight() - 80 - stack);
         toast.setLocation(loc);
+        ACTIVE.add(toast);
         toast.setVisible(true);
 
-        Timer fade = new Timer(4000, e -> toast.dispose());
+        Timer fade = new Timer(4000, e -> { toast.dispose(); ACTIVE.remove(toast); });
         fade.setRepeats(false);
         fade.start();
     }
