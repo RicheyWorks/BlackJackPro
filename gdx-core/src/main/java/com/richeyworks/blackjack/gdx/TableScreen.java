@@ -209,13 +209,25 @@ public final class TableScreen extends InputAdapter implements Screen {
         batch.begin();
         font.setColor(red ? Color.RED : Color.BLACK);
         font.draw(batch, card.rank().label(), x + 8, y + CARD_H - 8);
-        font.draw(batch, card.suit().glyph(), x + 8, y + CARD_H - 26);
+        font.draw(batch, suitLetter(card), x + 8, y + CARD_H - 26);
         bigFont.setColor(red ? Color.RED : Color.BLACK);
         String mid = (card.rank() == Rank.JACK || card.rank() == Rank.QUEEN
-                   || card.rank() == Rank.KING) ? card.rank().label() : card.suit().glyph();
+                   || card.rank() == Rank.KING) ? card.rank().label() : suitLetter(card);
         layout.setText(bigFont, mid);
         bigFont.draw(batch, mid, x + (CARD_W - layout.width) / 2f, y + CARD_H / 2 + layout.height / 2f);
         batch.end();
+    }
+
+    /** The default libGDX BitmapFont has no suit glyphs, so the gdx/Android UI
+     *  shows the suit's letter (S/H/D/C) instead, coloured red/black. */
+    private static String suitLetter(Card card) {
+        switch (card.suit()) {
+            case SPADES:   return "S";
+            case HEARTS:   return "H";
+            case DIAMONDS: return "D";
+            case CLUBS:    return "C";
+            default:       return "?";
+        }
     }
 
     private void drawCardBack(float x, float y) {
