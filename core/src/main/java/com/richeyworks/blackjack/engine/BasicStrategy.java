@@ -42,7 +42,7 @@ public final class BasicStrategy {
                     if (dv >= 3 && dv <= 6) return Action.D;  // double vs 3-6
                     if (dv <= 8) return Action.S;             // stand vs 2,7,8
                     return Action.H;                          // hit vs 9,10,A
-                case 17: return dv <= 6 ? Action.D : Action.H;
+                case 17: return (dv >= 3 && dv <= 6) ? Action.D : Action.H;  // A,6: hit vs 2
                 case 16:
                 case 15: return (dv >= 4 && dv <= 6) ? Action.D : Action.H;
                 case 14:

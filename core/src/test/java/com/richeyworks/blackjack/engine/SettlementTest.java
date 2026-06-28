@@ -74,4 +74,31 @@ class SettlementTest {
         }
         fail("no dealer-ace deal found in seed range");
     }
+
+    /** Regression: a 3:2 natural must floor bet*3/2, not floor the bet to even
+     *  first. The old (bet/den)*num underpaid every odd bet by a chip and paid
+     *  nothing on a bet of 1. */
+    @Test void naturalBlackjackPayoutFloorsBetTimesThreeOverTwo() {
+        BlackjackRules r = new BlackjackRules();
+        assertEquals(1,   r.blackjackPayout(1),   "$1 natural must pay 1, not 0");
+        assertEquals(7,   r.blackjackPayout(5),   "$5 natural pays floor(7.5)=7");
+        assertEquals(37,  r.blackjackPayout(25),  "$25 natural pays floor(37.5)=37");
+        assertEquals(150, r.blackjackPayout(100), "$100 natural pays 150");
+
+        // End-to-end: an odd-bet natural credits floor(bet*3/2) to the bankroll.
+        final int oddBet = 5;
+        for (long seed = 0; seed < 20000; seed++) {
+            Engine e = new Engine(START, new Random(seed), new BlackjackRules());
+            e.addBet(oddBet); e.deal();
+            if (e.phase() == Phase.INSURANCE) continue;
+            Hand p = e.hands().get(0);
+            boolean playerBJ = p.size() == 2 && p.value() == 21;
+            boolean dealerBJ = e.dealer().value() == 21 && e.dealer().size() == 2;
+            if (!playerBJ || dealerBJ) continue;
+            assertEquals(Phase.BETTING, e.phase());
+            assertEquals(START + oddBet * 3 / 2, e.bankroll(), "odd-bet 3:2 natural payout");
+            return;
+        }
+        fail("no odd-bet player natural blackjack found");
+    }
 }

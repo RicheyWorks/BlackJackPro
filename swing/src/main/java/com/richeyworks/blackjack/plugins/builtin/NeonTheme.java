@@ -40,7 +40,7 @@ public final class NeonTheme implements TableTheme {
         g.setColor(NEON_MAG);
         g.draw(r);
 
-        Color suitColor = card.suit().color().equals(Color.BLACK) ? NEON_CYAN : NEON_MAG;
+        Color suitColor = card.suit().isRed() ? NEON_MAG : NEON_CYAN;
         g.setColor(suitColor);
         g.setFont(g.getFont().deriveFont(Font.BOLD, 18f));
         g.drawString(card.rank().label(), x + 8, y + 22);

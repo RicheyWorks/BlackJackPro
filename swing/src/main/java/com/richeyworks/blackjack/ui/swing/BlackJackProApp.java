@@ -475,7 +475,7 @@ public final class BlackJackProApp extends JFrame {
             if (h.surrendered() || h.isBust()) continue;
             int pv = h.value();
             if (engine.dealer().isBlackjack() && h.isBlackjack()) return true;
-            if (!engine.dealer().isBlackjack() && pv == dv && dv <= 21) return true;
+            if (!engine.dealer().isBlackjack() && !h.isBlackjack() && pv == dv && dv <= 21) return true;
         }
         return false;
     }

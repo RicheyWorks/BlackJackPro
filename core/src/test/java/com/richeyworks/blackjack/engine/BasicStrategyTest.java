@@ -71,4 +71,13 @@ class BasicStrategyTest {
         assertEquals(BasicStrategy.Action.H, BasicStrategy.recommend(hand(Rank.ACE, Rank.SEVEN), c(Rank.NINE)));
         assertEquals(BasicStrategy.Action.H, BasicStrategy.recommend(hand(Rank.ACE, Rank.SEVEN), c(Rank.ACE)));
     }
+
+    @Test void soft17DoublesVs3to6_hitsVs2() {
+        // A,6 = soft 17.  Hit vs 2, double vs 3-6, hit vs 7-A (true under both S17 and H17).
+        assertEquals(BasicStrategy.Action.H, BasicStrategy.recommend(hand(Rank.ACE, Rank.SIX), c(Rank.TWO)),
+                "soft 17 vs 2 should hit, not double");
+        assertEquals(BasicStrategy.Action.D, BasicStrategy.recommend(hand(Rank.ACE, Rank.SIX), c(Rank.THREE)));
+        assertEquals(BasicStrategy.Action.D, BasicStrategy.recommend(hand(Rank.ACE, Rank.SIX), c(Rank.SIX)));
+        assertEquals(BasicStrategy.Action.H, BasicStrategy.recommend(hand(Rank.ACE, Rank.SIX), c(Rank.SEVEN)));
+    }
 }

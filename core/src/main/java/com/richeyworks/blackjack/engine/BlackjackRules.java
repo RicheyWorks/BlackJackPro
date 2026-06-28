@@ -21,10 +21,12 @@ public final class BlackjackRules {
     public int insurancePayoutDen = 1;
 
     /** Compute blackjack winnings (excluding stake return) for a given bet.
-     *  Floors to whole chips per denominator first, so a 3:2 payout never
-     *  awards a fractional chip (e.g. a bet of 1 pays 0, a bet of 100 pays 150). */
+     *  Standard floor of bet * num / den: a 3:2 natural pays the largest whole
+     *  chip amount not exceeding the true payout (bet 5 -> 7, 25 -> 37, 100 -> 150).
+     *  The previous formula floored the bet to the denominator first, which
+     *  underpaid every odd bet by up to one chip and paid 0 on a bet of 1. */
     public int blackjackPayout(int bet) {
-        return (bet / blackjackPayoutDen) * blackjackPayoutNum;
+        return bet * blackjackPayoutNum / blackjackPayoutDen;
     }
 
     public int insurancePayout(int insuranceBet) {

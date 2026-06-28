@@ -33,7 +33,7 @@ public final class ClassicTheme implements TableTheme {
         g.setColor(new Color(0x2B2B2B));
         g.draw(r);
 
-        g.setColor(card.suit().color());
+        g.setColor(new Color(card.suit().rgb()));
         Font corner = g.getFont().deriveFont(Font.BOLD, 18f);
         g.setFont(corner);
         g.drawString(card.rank().label(), x + 8, y + 22);

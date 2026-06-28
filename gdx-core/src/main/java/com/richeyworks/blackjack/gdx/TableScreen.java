@@ -205,7 +205,7 @@ public final class TableScreen extends InputAdapter implements Screen {
         shapes.rect(x, y, CARD_W, CARD_H);
         shapes.end();
 
-        boolean red = card.suit().color().getRed() > 150;
+        boolean red = card.suit().isRed();
         batch.begin();
         font.setColor(red ? Color.RED : Color.BLACK);
         font.draw(batch, card.rank().label(), x + 8, y + CARD_H - 8);

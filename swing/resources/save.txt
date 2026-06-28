@@ -1,0 +1,13 @@
+bankroll=1025
+hands=1
+wins=1
+losses=0
+pushes=0
+blackjacks=0
+busts=0
+doubles=0
+splits=0
+surrenders=0
+peakBankroll=1025
+totalWagered=25
+totalReturned=50

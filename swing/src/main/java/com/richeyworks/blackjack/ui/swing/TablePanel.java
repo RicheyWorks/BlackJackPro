@@ -66,7 +66,7 @@ public final class TablePanel extends JPanel {
         g2.setFont(g2.getFont().deriveFont(Font.BOLD, 16f));
         String dealerCaption;
         if (engine.dealer().isEmpty()) dealerCaption = "Dealer";
-        else if (hideHole)             dealerCaption = "Dealer (showing " + engine.dealer().first().rank().value() + ")";
+        else if (hideHole)             dealerCaption = "Dealer (showing " + engine.dealer().first().rank().label() + ")";
         else                           dealerCaption = "Dealer (" + engine.dealer().value() + ")";
         g2.drawString(dealerCaption, w / 2 - 60, dealerCaptionY);
 
