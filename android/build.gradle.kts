@@ -11,7 +11,7 @@ plugins {
     id("com.android.application") version "8.5.2"
 }
 
-val gdxVersion = "1.12.1"
+val gdxVersion = "1.14.2"
 val natives = configurations.create("natives")
 
 android {

@@ -13,7 +13,7 @@ java {
     }
 }
 
-val gdxVersion = "1.12.1"
+val gdxVersion = "1.14.2"
 
 dependencies {
     implementation(project(":gdx-core"))
