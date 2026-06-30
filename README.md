@@ -55,8 +55,16 @@ swing/         Desktop UI, plugins, media, Steam bridge
 gdx-core/      libGDX game + TableScreen
 gdx-desktop/   LWJGL3 launcher
 android/       APK launcher
+platform/      Online real-money platform skeleton (design; see docs/architecture)
 resources/     Shared assets (deck, lang, css)
+docs/          Architecture decision records
 ```
+
+## Security & online platform (design)
+
+A security audit of the desktop build and the fixes applied are documented in [`AUDIT.md`](AUDIT.md) — hardened plugin loading (SHA-256 allow-list), a per-user data directory, a `SecureRandom` shoe, and dependency/CI hardening.
+
+An early, compliance-first design for an online **real-money** (including crypto) platform lives under [`platform/`](platform/README.md), with the rationale in [`docs/architecture/ADR-0001-real-money-crypto-platform.md`](docs/architecture/ADR-0001-real-money-crypto-platform.md). It is interface stubs plus reference implementations of the fail-closed compliance gate, the double-entry wallet, and a server-authoritative round — **not operable without state licensing, FinCEN MSB registration, and gaming-law counsel.**
 
 ## License
 

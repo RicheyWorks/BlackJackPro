@@ -4,6 +4,7 @@ include(":core")
 include(":swing")
 include(":gdx-core")
 include(":gdx-desktop")
+include(":platform")
 
 // Android is optional: included when an SDK is configured locally.
 // Desktop-only builds (Swing, libGDX desktop) work without it.
