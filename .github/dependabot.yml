@@ -1,0 +1,47 @@
+# Dependabot keeps third-party references current by opening grouped PRs on a
+# weekly cadence; review and merge them. This covers the staleness half of the
+# audit's L3 item. NOTE: Dependabot maintains whatever ref style you already
+# use — it does NOT convert mutable tags (@v4) into commit SHAs. To get
+# immutable SHA pins, replace the @v4/@v2 tags in the workflows with the
+# corresponding commit SHAs once; Dependabot will then keep those SHAs updated.
+#
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  # GitHub Actions used by ci.yml and release.yml. Dependabot raises a PR as new
+  # releases land, keeping each `uses:` reference current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # Gradle dependencies across the multi-module build (libGDX, JUnit, …).
+  - package-ecosystem: "gradle"
+    directories:
+      - "/"
+      - "/core"
+      - "/swing"
+      - "/gdx-core"
+      - "/gdx-desktop"
+      - "/android"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gradle:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "gradle"

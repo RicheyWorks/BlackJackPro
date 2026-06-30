@@ -1,9 +1,36 @@
+# JVM build artifacts
 bin/
+build/
+out/
+.gradle/
 *.class
-resources/logs/
 *.log
+
+# IDE
 .classpath
 .project
 .settings/
 .idea/
 .vscode/
+*.iml
+
+# Generated docs
+javadoc/
+
+# Game runtime data (local-only)
+resources/logs/
+resources/saves/
+resources/save.txt
+
+# Large binary assets — host these outside git
+resources/music/*.mp3
+resources/music/*.wav
+resources/music/*.ogg
+resources/music/*.m4a
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Android local SDK path (never commit)
+local.properties

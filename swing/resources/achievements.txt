@@ -1,0 +1,12 @@
+first_hand|1|true
+first_win|1|true
+first_blackjack|0|false
+ten_wins|1|false
+fifty_wins|1|false
+first_split|0|false
+first_double|0|false
+first_surrender|0|false
+survived_bust|0|false
+bankroll_5k|1025|false
+bankroll_10k|1025|false
+survived_bust_streak|1|false
