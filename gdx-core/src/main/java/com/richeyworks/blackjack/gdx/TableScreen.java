@@ -1,7 +1,6 @@
 package com.richeyworks.blackjack.gdx;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
@@ -22,9 +21,9 @@ import com.richeyworks.blackjack.engine.Hand;
 import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.engine.Rank;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 /**
  * Touch-friendly libGDX table that consumes the same {@link Engine} the Swing
@@ -58,7 +57,7 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     public TableScreen(BlackJackGame game) {
         this.game   = game;
-        this.engine = new Engine(1000, new Random());
+        this.engine = new Engine(1000, new SecureRandom());
         bigFont.getData().setScale(2f);
         Gdx.input.setInputProcessor(this);
         buildButtons();

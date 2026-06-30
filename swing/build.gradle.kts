@@ -19,7 +19,10 @@ java {
 
 dependencies {
     implementation(project(":core"))
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
+    // NOTE: jackson-databind was removed — it was on the classpath but never
+    // imported by any source file. Re-add via Gradle (current patched release)
+    // only if a feature actually needs JSON, and never enable polymorphic
+    // default typing on untrusted input.
 
     testImplementation(platform("org.junit:junit-bom:5.10.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")

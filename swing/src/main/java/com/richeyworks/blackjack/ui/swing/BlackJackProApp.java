@@ -8,6 +8,7 @@ import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.engine.SessionStats;
 import com.richeyworks.blackjack.media.MusicService;
 import com.richeyworks.blackjack.media.SoundFx;
+import com.richeyworks.blackjack.persist.AppPaths;
 import com.richeyworks.blackjack.persist.SaveManager;
 import com.richeyworks.blackjack.plugin.PluginRegistry;
 import com.richeyworks.blackjack.plugin.SideBetManager;
@@ -45,7 +46,7 @@ import java.awt.event.WindowEvent;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.Random;
+import java.security.SecureRandom;
 
 /**
  * The main game window. Owns the {@link Engine} and renders the {@link TablePanel}
@@ -64,7 +65,6 @@ public final class BlackJackProApp extends JFrame {
     private final AchievementService achievements;
     private       TableTheme         theme;
 
-    private int previousBankroll;
     private int previousWins;
     private int processedHands;   // rounds already post-processed (round-complete detection)
     private int winStreak;        // consecutive winning rounds (streak achievement)
@@ -87,6 +87,17 @@ public final class BlackJackProApp extends JFrame {
     private final JLabel countLabel = new JLabel();
 
     private static final int[] CHIP_VALUES = {1, 5, 25, 100, 500};
+
+    // Table palette — hex literals collected here for consistency and reuse.
+    private static final Color HUD_GOLD    = new Color(0xF8E9A1); // status text + bankroll/bet HUD
+    private static final Color STATUS_BG   = new Color(0x0E2E1A); // status-bar background
+    private static final Color BAR_BG      = new Color(0x0D2A18); // control-bar background
+    private static final Color SHOE_GREY   = new Color(0xBDBDBD); // shoe-count label
+    private static final Color SIDE_GOLD   = new Color(0xC9A227); // 21+3 side-bet label
+    private static final Color COUNT_GREEN = new Color(0x9FE0B0); // Hi-Lo count label
+    private static final Color BTN_FACE    = new Color(0x8B5E2B); // pirate-button face
+    private static final Color BTN_BORDER  = new Color(0x5C3A0F); // pirate-button border
+    private static final Color FLASH_BG    = new Color(0x6E3030); // transient error flash
 
     public BlackJackProApp(Engine engine,
                            MusicService music,
@@ -114,7 +125,6 @@ public final class BlackJackProApp extends JFrame {
 
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         save.load(engine);
-        previousBankroll = engine.bankroll();
         previousWins     = engine.stats().wins;
         processedHands   = engine.stats().hands;
         achievements.onUnlock(a -> {
@@ -127,9 +137,9 @@ public final class BlackJackProApp extends JFrame {
         add(buildControlBar(), BorderLayout.SOUTH);
 
         statusBar.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
-        statusBar.setForeground(new Color(0xF8E9A1));
+        statusBar.setForeground(HUD_GOLD);
         statusBar.setOpaque(true);
-        statusBar.setBackground(new Color(0x0E2E1A));
+        statusBar.setBackground(STATUS_BG);
         add(statusBar, BorderLayout.NORTH);
         setJMenuBar(buildMenuBar());
 
@@ -156,7 +166,7 @@ public final class BlackJackProApp extends JFrame {
 
     private JPanel buildControlBar() {
         JPanel p = new JPanel(new GridBagLayout());
-        p.setBackground(new Color(0x0D2A18));
+        p.setBackground(BAR_BG);
         p.setBorder(BorderFactory.createEmptyBorder(8, 8, 12, 8));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 6, 4, 6);
@@ -216,12 +226,12 @@ public final class BlackJackProApp extends JFrame {
         JPanel info = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 0));
         info.setOpaque(false);
         Font hud = bankLabel.getFont().deriveFont(Font.BOLD, 16f);
-        bankLabel.setForeground(new Color(0xF8E9A1));
-        betLabel.setForeground(new Color(0xF8E9A1));
-        shoeLabel.setForeground(new Color(0xBDBDBD));
+        bankLabel.setForeground(HUD_GOLD);
+        betLabel.setForeground(HUD_GOLD);
+        shoeLabel.setForeground(SHOE_GREY);
         bankLabel.setFont(hud); betLabel.setFont(hud);
-        sideLabel.setForeground(new Color(0xC9A227));
-        countLabel.setForeground(new Color(0x9FE0B0));
+        sideLabel.setForeground(SIDE_GOLD);
+        countLabel.setForeground(COUNT_GREEN);
         info.add(bankLabel); info.add(betLabel);
         if (sideBets.available()) info.add(sideLabel);
         info.add(shoeLabel);
@@ -331,12 +341,12 @@ public final class BlackJackProApp extends JFrame {
 
     private JButton pirateButton(String text) {
         JButton b = new JButton(text);
-        b.setBackground(new Color(0x8B5E2B));
+        b.setBackground(BTN_FACE);
         b.setForeground(Color.WHITE);
         b.setFocusPainted(false);
         b.setFont(b.getFont().deriveFont(Font.BOLD, 13f));
         b.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(0x5C3A0F), 1, true),
+                BorderFactory.createLineBorder(BTN_BORDER, 1, true),
                 BorderFactory.createEmptyBorder(6, 14, 6, 14)));
         return b;
     }
@@ -466,7 +476,6 @@ public final class BlackJackProApp extends JFrame {
             lastShoeRemaining = engine.shoe().remaining();
         }
         previousWins     = s.wins;
-        previousBankroll = engine.bankroll();
     }
 
     private boolean anyHandPushed() {
@@ -482,7 +491,7 @@ public final class BlackJackProApp extends JFrame {
 
     private String describe() {
         switch (engine.phase()) {
-            case BETTING:   return engine.bankroll() == 0 ? "Out of chips!" : "Place your bet.";
+            case BETTING:   return engine.bankroll() <= 0 ? "Out of chips!" : "Place your bet.";
             case INSURANCE: return "Dealer shows Ace — insurance?";
             case PLAYER:    return "Hand " + (engine.activeIndex() + 1) + " of "
                     + engine.hands().size() + " — your move.";
@@ -607,12 +616,12 @@ public final class BlackJackProApp extends JFrame {
             bDouble.setEnabled(engine.canDouble());
             bSplit.setEnabled(engine.canSplit());
             bSurrender.setEnabled(engine.canSurrender());
-            bIns.setEnabled(insure);
+            bIns.setEnabled(engine.canInsure());
             bNoIns.setEnabled(insure);
             bHint.setEnabled(playing);
             table.repaint();
 
-            if (betting && engine.bankroll() == 0 && engine.pendingBet() == 0
+            if (betting && engine.bankroll() <= 0 && engine.pendingBet() == 0
                     && sideBets.pending() == 0) {
                 int yes = JOptionPane.showConfirmDialog(this,
                         "You're out of chips! Reload $1000?", "Bust",
@@ -625,7 +634,7 @@ public final class BlackJackProApp extends JFrame {
     private void flash(String msg) {
         Color was = statusBar.getBackground();
         statusBar.setText(msg);
-        statusBar.setBackground(new Color(0x6E3030));
+        statusBar.setBackground(FLASH_BG);
         new Timer(900, e -> {
             statusBar.setBackground(was);
             ((Timer) e.getSource()).stop();
@@ -639,27 +648,31 @@ public final class BlackJackProApp extends JFrame {
     public static void launch() {
         try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception ignored) {}
 
-        Path resourceRoot = Paths.get("resources");
+        // Bundled, read-only assets (music, art) ship next to the app.
+        Path assetRoot = Paths.get("resources");
+        // Writable state (settings, save, achievements) and trusted plugins live
+        // in a fixed per-user data directory — never the process working dir.
+        Path dataDir = AppPaths.dataDir();
 
-        GameSettings settings = new GameSettings(resourceRoot.resolve("settings.properties"));
-        MusicService music    = new MusicService(resourceRoot.resolve("music"));
+        GameSettings settings = new GameSettings(dataDir.resolve("settings.properties"));
+        MusicService music    = new MusicService(assetRoot.resolve("music"));
         SoundFx      sfx      = new SoundFx();
         sfx.setMuted(!settings.sfxEnabled);
         sfx.setVolume(settings.sfxVolume);
         music.setVolume(settings.musicVolume);
         if (!settings.musicEnabled) music.toggleMute();
 
-        SaveManager  save  = new SaveManager(resourceRoot.resolve("save.txt"));
-        AchievementService achievements = new AchievementService(resourceRoot.resolve("achievements.txt"));
+        SaveManager  save  = new SaveManager(dataDir.resolve("save.txt"));
+        AchievementService achievements = new AchievementService(dataDir.resolve("achievements.txt"));
         PluginRegistry plugins = new PluginRegistry();
-        plugins.loadAll(Paths.get("plugins"));
+        plugins.loadAll(dataDir.resolve("plugins"));
 
         // Optional Steam integration — only activates if the SDK is on the classpath
         // and steam_appid.txt is present. Replace 0 with your real app id once assigned.
         SteamBridge.init(0);
         SteamBridge.wire(achievements);
 
-        Engine engine = new Engine(1000, new Random());
+        Engine engine = new Engine(1000, new SecureRandom());
         engine.rules().dealerHitsSoft17 = settings.dealerHitsSoft17;
         engine.rules().lateSurrender    = settings.lateSurrender;
         engine.rules().offerInsurance   = settings.offerInsurance;
