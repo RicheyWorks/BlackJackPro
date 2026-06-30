@@ -37,7 +37,7 @@ jobs:
 
       - name: Build & test
         shell: bash
-        run: ./gradlew :core:test :swing:test :gdx-desktop:classes --no-daemon
+        run: ./gradlew :core:test :swing:test :platform:test :gdx-desktop:classes --no-daemon
 
       - name: Upload test reports
         if: always()
