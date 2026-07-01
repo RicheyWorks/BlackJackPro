@@ -1,6 +1,9 @@
 package com.richeyworks.blackjack.settings;
 
+import com.richeyworks.blackjack.persist.AtomicFiles;
+
 import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
@@ -38,8 +41,8 @@ public final class GameSettings {
             offerInsurance   = bool(p, "offerInsurance",   offerInsurance);
             sfxEnabled       = bool(p, "sfxEnabled",       sfxEnabled);
             musicEnabled     = bool(p, "musicEnabled",     musicEnabled);
-            sfxVolume        = flt(p, "sfxVolume",        sfxVolume);
-            musicVolume      = flt(p, "musicVolume",      musicVolume);
+            sfxVolume        = clamp01(flt(p, "sfxVolume",   sfxVolume));
+            musicVolume      = clamp01(flt(p, "musicVolume", musicVolume));
             themeId          = p.getProperty("themeId",       themeId);
             aiPersonality    = p.getProperty("aiPersonality", aiPersonality);
         } catch (IOException ignored) { }
@@ -48,7 +51,6 @@ public final class GameSettings {
     public void save() {
         if (file == null) return;
         try {
-            if (file.getParent() != null) Files.createDirectories(file.getParent());
             Properties p = new Properties();
             p.setProperty("dealerHitsSoft17", Boolean.toString(dealerHitsSoft17));
             p.setProperty("lateSurrender",    Boolean.toString(lateSurrender));
@@ -59,7 +61,9 @@ public final class GameSettings {
             p.setProperty("musicVolume",      Float.toString(musicVolume));
             p.setProperty("themeId",          themeId);
             p.setProperty("aiPersonality",    aiPersonality);
-            try (var out = Files.newBufferedWriter(file)) { p.store(out, "BlackJack Pro settings"); }
+            StringWriter sw = new StringWriter();
+            p.store(sw, "BlackJack Pro settings");
+            AtomicFiles.writeString(file, sw.toString());
         } catch (IOException ignored) { }
     }
 
@@ -71,5 +75,12 @@ public final class GameSettings {
         String v = p.getProperty(k);
         try { return v == null ? def : Float.parseFloat(v); }
         catch (NumberFormatException e) { return def; }
+    }
+
+    /** Clamp a volume into [0,1]; treat NaN as 0 so a bad settings file can't
+     *  push the mixer out of range. */
+    private static float clamp01(float v) {
+        if (Float.isNaN(v)) return 0f;
+        return Math.max(0f, Math.min(1f, v));
     }
 }

@@ -1,5 +1,7 @@
 package com.richeyworks.blackjack.achievement;
 
+import com.richeyworks.blackjack.persist.AtomicFiles;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,11 +82,13 @@ public final class AchievementService {
                 if (parts.length < 3) continue;
                 Achievement a = all.get(parts[0]);
                 if (a == null) continue;
-                int progress    = Integer.parseInt(parts[1]);
-                boolean unlocked = Boolean.parseBoolean(parts[2]);
-                a.restore(progress, unlocked);
+                try {
+                    a.restore(Integer.parseInt(parts[1].trim()), Boolean.parseBoolean(parts[2].trim()));
+                } catch (NumberFormatException ex) {
+                    // Skip a single corrupt line and keep loading the rest.
+                }
             }
-        } catch (IOException | NumberFormatException ignored) { }
+        } catch (IOException ignored) { }
     }
 
     public void save() {
@@ -97,7 +101,7 @@ public final class AchievementService {
                   .append(a.progress()).append('|')
                   .append(a.unlocked()).append('\n');
             }
-            Files.writeString(file, sb.toString());
+            AtomicFiles.writeString(file, sb.toString());
         } catch (IOException ignored) { }
     }
 }
