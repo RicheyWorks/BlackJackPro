@@ -1,7 +1,6 @@
 package com.richeyworks.blackjack.plugin;
 
 import com.richeyworks.blackjack.engine.Card;
-import com.richeyworks.blackjack.engine.Hand;
 
 import java.util.List;
 
