@@ -4,7 +4,6 @@ import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Rank;
 import com.richeyworks.blackjack.plugin.TableTheme;
 
-import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
@@ -28,6 +27,8 @@ public final class ClassicTheme implements TableTheme {
     @Override
     public void paintCardFace(Graphics2D g, int x, int y, Card card) {
         Shape r = new RoundRectangle2D.Float(x, y, cardWidth(), cardHeight(), 14, 14);
+        Font  f0 = g.getFont();
+        Color c0 = g.getColor();
         g.setColor(Color.WHITE);
         g.fill(r);
         g.setColor(new Color(0x2B2B2B));
@@ -59,6 +60,8 @@ public final class ClassicTheme implements TableTheme {
         int sw = fm.stringWidth(mid);
         g.drawString(mid, x + (cardWidth() - sw) / 2,
                 y + cardHeight() / 2 + fm.getAscent() / 2 - 6);
+        g.setFont(f0);
+        g.setColor(c0);
     }
 
     @Override
