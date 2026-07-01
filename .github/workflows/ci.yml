@@ -44,7 +44,10 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-results-${{ matrix.os }}
+          # Multi-module build: reports land under each module (core/, swing/,
+          # platform/, …), not the repo root. Glob across modules so results
+          # actually upload instead of "No files were found".
           path: |
-            build/reports/tests/
-            build/test-results/
+            **/build/reports/tests/
+            **/build/test-results/
           retention-days: 7
