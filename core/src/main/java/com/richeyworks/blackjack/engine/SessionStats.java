@@ -11,7 +11,7 @@ public final class SessionStats {
     public int doubles;
     public int splits;
     public int surrenders;
-    public int peakBankroll = 1000;
+    public int peakBankroll = 0;
     public int totalWagered;
     public int totalReturned;
 
@@ -24,6 +24,6 @@ public final class SessionStats {
         hands = wins = losses = pushes = blackjacks = busts
               = doubles = splits = surrenders
               = totalWagered = totalReturned = 0;
-        peakBankroll = 1000;
+        peakBankroll = 0;
     }
 }

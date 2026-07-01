@@ -110,4 +110,19 @@ class EngineTest {
         assertEquals(2000, e.bankroll());
         assertEquals(0, e.stats().hands);
     }
+
+    @Test void peakBankrollReflectsSubThousandStart() {
+        // Regression (CR-1): the peak was hard-floored at 1000, overstating any
+        // start below $1000. It should equal the real starting bankroll.
+        Engine e = new Engine(500, new Random(1));
+        assertEquals(500, e.stats().peakBankroll);
+    }
+
+    @Test void freshAndResetStatsCarryNoPhantomPeak() {
+        SessionStats s = new SessionStats();
+        assertEquals(0, s.peakBankroll, "fresh stats have no phantom peak");
+        s.peakBankroll = 3000;
+        s.reset();
+        assertEquals(0, s.peakBankroll, "reset clears the peak");
+    }
 }
