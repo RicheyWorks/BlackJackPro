@@ -8,6 +8,24 @@
 
 The engine is in good shape. The money-handling path — the part that actually matters — is **correct and well-tested**, with no High or Critical issues. Every finding below is **Low** or **Informational**: a cosmetic stat floor, the limits of using `int` for money, and light input-validation gaps on hand-editable save files. None affects fair play in the shipping desktop game.
 
+## Resolution status
+
+Follow-up PRs landed after this review resolved every desktop-relevant finding:
+
+| Finding | Status | PR |
+|---------|--------|----|
+| CR-1 · peakBankroll floor | ✅ Fixed | #11 |
+| CR-5 · clamp loaded values | ✅ Fixed | #12 |
+| CR-6 · atomic save writes | ✅ Fixed | #12 |
+| CR-7 · tolerant achievement load | ✅ Fixed | #12 |
+| CR-2 · late-surrender advice | ✅ Fixed | #13 |
+| CR-3 · multi-card soft advice | ✅ Fixed | #13 |
+| CR-4 · int-money limits | ⏳ Deferred | — |
+| CR-8 · mutable rules / concurrency | ⏳ Deferred | — |
+| CR-9 · RNG / mid-round reshuffle | ⏳ Deferred | — |
+
+CR-4/8/9 are intentionally deferred — they only matter for a high-limit, served, or real-money build (the `platform/` module already assumes a different money model).
+
 ## What's solid (verified)
 
 - **Settlement is correct across every branch.** Natural blackjack pays 3:2, insurance pays 2:1 and breaks even against a dealer natural, pushes return the stake, late surrender forfeits exactly half, and split aces draw one card without the old double-pay. These are exercised by `EngineTest`, `SettlementTest`, `SplitAceSettlementTest`, and the new `RoundActionsTest`, and the ledger invariant `bankroll == start − totalWagered + totalReturned` holds.
@@ -59,4 +77,4 @@ Bets and bankroll are `int` throughout. `blackjackPayout` uses multiply-before-d
 4. **CR-2 / CR-3** — advisor completeness, if the hint is meant to be optimal.
 5. **CR-4 / CR-8 / CR-9** — revisit only if a high-limit, served, or real-money build is on the table (the `platform/` module already assumes a different money model).
 
-*No changes were made to the codebase as part of this review.*
+*The review itself made no code changes; the fixes above were shipped as the follow-up PRs #11–#13.*
