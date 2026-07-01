@@ -35,7 +35,7 @@ public final class SaveManager {
             sb.append("peakBankroll=").append(s.peakBankroll).append('\n');
             sb.append("totalWagered=").append(s.totalWagered).append('\n');
             sb.append("totalReturned=").append(s.totalReturned).append('\n');
-            Files.writeString(file, sb.toString());
+            AtomicFiles.writeString(file, sb.toString());
         } catch (IOException ignored) { /* save failures shouldn't crash the game */ }
     }
 
@@ -49,6 +49,7 @@ public final class SaveManager {
                 int n;
                 try { n = Integer.parseInt(line.substring(eq + 1).trim()); }
                 catch (NumberFormatException ex) { continue; }
+                if (n < 0) n = 0;   // reject negative bankroll/counters from a hand-edited save
                 SessionStats s = e.stats();
                 switch (k) {
                     case "bankroll"      -> e.setBankroll(n);
