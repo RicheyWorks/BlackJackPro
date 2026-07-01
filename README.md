@@ -1,5 +1,9 @@
 # BlackJack Pro
 
+[![CI](https://github.com/RicheyWorks/BlackJackPro/actions/workflows/ci.yml/badge.svg)](https://github.com/RicheyWorks/BlackJackPro/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://adoptium.net/)
+
 Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing desktop UI, and an early libGDX/Android port sharing the same core.
 
 ## Features
@@ -12,20 +16,20 @@ Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing 
 
 ## Build & run
 
-Requires **JDK 21** on PATH. Gradle wrapper is included — no separate Gradle install needed.
+Requires **JDK 21** on PATH. The Gradle wrapper is included — no separate Gradle install needed. Examples below use `./gradlew` (macOS/Linux); on Windows use `gradlew` or `gradlew.bat`.
 
 ```bash
-# Build + test (desktop modules; Android skipped unless local.properties / ANDROID_HOME set)
-gradlew :core:test :swing:test :gdx-desktop:classes
+# Build + test (same tasks CI runs; Android skipped unless local.properties / ANDROID_HOME set)
+./gradlew :core:test :swing:test :platform:test :gdx-desktop:classes
 
 # Run Swing desktop (primary)
-gradlew :swing:run
+./gradlew :swing:run
 
 # libGDX desktop preview (optional)
-gradlew :gdx-desktop:run
+./gradlew :gdx-desktop:run
 
 # Native installer (optional, needs -Pjpackage)
-gradlew :swing:jpackage -Pjpackage
+./gradlew :swing:jpackage -Pjpackage
 ```
 
 **Android (optional):** Add `local.properties` with `sdk.dir=...` or set `ANDROID_HOME`, then `gradlew :android:assembleDebug`.
@@ -36,7 +40,7 @@ gradlew :swing:jpackage -Pjpackage
 
 | Area | Status |
 |------|--------|
-| Core engine + tests | Working — JUnit 5, CI on push/PR (Ubuntu, Windows, macOS) |
+| Core engine + tests | Working — JUnit 5; CI green on Ubuntu, Windows, macOS |
 | Swing desktop | Primary polished build — themes, plugins, achievements, saves |
 | libGDX + Android | Foundation landed — basic table UI, debug APK builds |
 | iOS / mobile polish | Not started — animated cards, haptics, achievement port |
