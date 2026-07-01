@@ -67,6 +67,8 @@ public final class ClassicTheme implements TableTheme {
     @Override
     public void paintCardBack(Graphics2D g, int x, int y) {
         Shape r = new RoundRectangle2D.Float(x, y, cardWidth(), cardHeight(), 14, 14);
+        Font  f0 = g.getFont();
+        Color c0 = g.getColor();
         g.setColor(new Color(0x14213D));
         g.fill(r);
         g.setColor(new Color(0x1E3A5F));
@@ -89,10 +91,14 @@ public final class ClassicTheme implements TableTheme {
         FontMetrics fm = g.getFontMetrics();
         g.drawString(s, x + (cardWidth() - fm.stringWidth(s)) / 2,
                 y + cardHeight() / 2 + fm.getAscent() / 2 - 2);
+        g.setFont(f0);
+        g.setColor(c0);
     }
 
     @Override
     public void paintChip(Graphics2D g, int cx, int cy, int radius, int value) {
+        Font  f0 = g.getFont();
+        Color c0 = g.getColor();
         Color edge, face;
         switch (value) {
             case 1   -> { face = new Color(0xECECEC); edge = new Color(0x9E9E9E); }
@@ -117,5 +123,7 @@ public final class ClassicTheme implements TableTheme {
         String s = String.valueOf(value);
         FontMetrics fm = g.getFontMetrics();
         g.drawString(s, cx - fm.stringWidth(s) / 2, cy + fm.getAscent() / 2 - 2);
+        g.setFont(f0);
+        g.setColor(c0);
     }
 }
