@@ -78,4 +78,31 @@ class BasicStrategyTest {
         assertEquals(BasicStrategy.Action.D, BasicStrategy.recommend(hand(Rank.ACE, Rank.SIX), c(Rank.SIX)));
         assertEquals(BasicStrategy.Action.H, BasicStrategy.recommend(hand(Rank.ACE, Rank.SIX), c(Rank.SEVEN)));
     }
+
+    @Test void lateSurrenderSixteenVsNineTenAce() {
+        // CR-2: hard 16 (10+6, non-pair) surrenders vs 9, 10, A; stands/hits otherwise.
+        assertEquals(BasicStrategy.Action.R, BasicStrategy.recommend(hand(Rank.TEN, Rank.SIX), c(Rank.NINE)));
+        assertEquals(BasicStrategy.Action.R, BasicStrategy.recommend(hand(Rank.TEN, Rank.SIX), c(Rank.TEN)));
+        assertEquals(BasicStrategy.Action.R, BasicStrategy.recommend(hand(Rank.TEN, Rank.SIX), c(Rank.ACE)));
+        assertEquals(BasicStrategy.Action.S, BasicStrategy.recommend(hand(Rank.TEN, Rank.SIX), c(Rank.SIX)));
+        assertEquals(BasicStrategy.Action.H, BasicStrategy.recommend(hand(Rank.TEN, Rank.SIX), c(Rank.EIGHT)));
+    }
+
+    @Test void lateSurrenderFifteenVsTenOnly() {
+        assertEquals(BasicStrategy.Action.R, BasicStrategy.recommend(hand(Rank.TEN, Rank.FIVE), c(Rank.TEN)));
+        assertEquals(BasicStrategy.Action.H, BasicStrategy.recommend(hand(Rank.TEN, Rank.FIVE), c(Rank.NINE)));
+    }
+
+    @Test void surrenderIsTwoCardOnly() {
+        // A 3-card 16 (9+4+3) can't surrender -> hit vs 10.
+        assertEquals(BasicStrategy.Action.H,
+                BasicStrategy.recommend(hand(Rank.NINE, Rank.FOUR, Rank.THREE), c(Rank.TEN)));
+    }
+
+    @Test void multiCardSoft18StandsWhereTwoCardWouldDouble() {
+        // CR-3: 2-card A,7 vs 5 doubles, but 3-card A,3,4 (also soft 18) must
+        // stand rather than fall through to a hit.
+        assertEquals(BasicStrategy.Action.D, BasicStrategy.recommend(hand(Rank.ACE, Rank.SEVEN), c(Rank.FIVE)));
+        assertEquals(BasicStrategy.Action.S, BasicStrategy.recommend(hand(Rank.ACE, Rank.THREE, Rank.FOUR), c(Rank.FIVE)));
+    }
 }
