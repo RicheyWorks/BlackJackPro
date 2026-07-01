@@ -106,7 +106,7 @@ public final class DefaultGameRoundService implements GameRoundService {
                 e.split();
             }
             case INSURANCE_TAKE -> {
-                if (!e.canInsure()) throw new IllegalStateException("cannot take insurance now");
+                if (e.phase() != Phase.INSURANCE) throw new IllegalStateException("cannot take insurance now");
                 holdExtra(r, e.hands().get(0).bet() / 2);
                 e.takeInsurance(true);
             }

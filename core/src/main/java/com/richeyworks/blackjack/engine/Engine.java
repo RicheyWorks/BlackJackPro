@@ -1,8 +1,6 @@
 package com.richeyworks.blackjack.engine;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
 import java.util.Random;
 
@@ -13,7 +11,6 @@ public final class Engine {
     private final Hand           dealer = new Hand();
     private final List<Hand>     player = new ArrayList<>();
     private final SessionStats   stats  = new SessionStats();
-    private final Deque<String>  log    = new ArrayDeque<>(256);
 
     private int   activeHand;
     private int   bankroll;
@@ -44,14 +41,8 @@ public final class Engine {
     public int            bankroll()   { return bankroll; }
     public int            pendingBet() { return pendingBet; }
     public int            insuranceBet(){ return insuranceBet; }
-    public Deque<String>  log()        { return log; }
 
     public void setBankroll(int b) { this.bankroll = b; }
-
-    void log(String msg) {
-        if (log.size() >= 250) log.pollFirst();
-        log.addLast(msg);
-    }
 
     public boolean canBet(int amount) {
         return phase == Phase.BETTING && amount > 0 && amount <= bankroll;
@@ -76,6 +67,12 @@ public final class Engine {
         Hand h = active();
         return phase == Phase.PLAYER && rules.lateSurrender && h.size() == 2 && player.size() == 1
                 && !h.fromSplit() && !h.doubled();
+    }
+
+    /** True iff insurance is offered and the player can afford the half-bet premium. */
+    public boolean canInsure() {
+        return phase == Phase.INSURANCE && !player.isEmpty()
+                && bankroll >= player.get(0).bet() / 2;
     }
 
     public void addBet(int amount) {
@@ -114,7 +111,6 @@ public final class Engine {
 
         if (rules.offerInsurance && dealer.first().rank() == Rank.ACE) {
             phase = Phase.INSURANCE;
-            log("Dealer shows Ace — offering insurance.");
             return;
         }
         afterInsuranceCheck();
