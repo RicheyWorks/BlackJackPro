@@ -24,7 +24,7 @@ dependencies {
     // only if a feature actually needs JSON, and never enable polymorphic
     // default typing on untrusted input.
 
-    testImplementation(platform("org.junit:junit-bom:5.10.3"))
+    testImplementation(platform("org.junit:junit-bom:6.1.1"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
