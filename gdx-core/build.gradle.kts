@@ -14,7 +14,7 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
-val gdxVersion = "1.12.1"
+val gdxVersion = "1.14.2"
 
 dependencies {
     api(project(":core"))
