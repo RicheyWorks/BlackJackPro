@@ -99,7 +99,7 @@ public final class Engine {
     /** True iff insurance is offered and the player can afford the half-bet premium. */
     public boolean canInsure() {
         return phase == Phase.INSURANCE && !player.isEmpty()
-                && bankroll >= player.get(0).bet() / 2;
+                && bankroll >= rules.insurancePremium(player.get(0).bet());
     }
 
     public void addBet(int amount) {
@@ -153,7 +153,9 @@ public final class Engine {
         if (phase != Phase.INSURANCE) throw new IllegalStateException("not in insurance phase");
         Hand h = player.get(0);
         if (accept) {
-            int cost = h.bet() / 2;
+            // Same source as canInsure(): computing the premium in two places is
+            // how the offer and the charge drift apart.
+            int cost = rules.insurancePremium(h.bet());
             if (bankroll < cost) throw new IllegalStateException("not enough chips for insurance");
             bankroll    -= cost;
             stats.totalWagered += cost;   // insurance is a wager; keep accounting consistent
@@ -244,7 +246,7 @@ public final class Engine {
         Hand h = active();
         h.surrender();
         stats.surrenders++;
-        int refund = h.bet() / 2;
+        int refund = rules.surrenderRefund(h.bet());
         bankroll  += refund;
         stats.totalReturned += refund;
         phase = Phase.SETTLE;

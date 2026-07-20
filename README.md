@@ -8,7 +8,7 @@ Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing 
 
 ## Features
 
-- **House rules:** 6-deck shoe (~75% penetration), 3:2 blackjack, push on tie, double on any two cards, split up to 4 hands (split aces get one card), late surrender, insurance (2:1), dealer stands on soft 17 (toggle in Options)
+- **House rules:** 6-deck shoe (~75% penetration), 3:2 blackjack, push on tie, double on any two cards, split up to 4 hands (split aces get one card), late surrender, insurance (2:1), dealer stands on soft 17 (toggle in Options). The game pays whole dollars, and any odd half rounds in the player's favour — a \$25 natural pays 38, not 37
 - **Swing desktop:** Custom-painted felt/cards/chips, procedural SFX, settings dialog, 12 achievements with toasts, bankroll + stats persistence
 - **Plugins:** ServiceLoader + external JARs — built-in Neon theme, Hi-Lo counter AI, 21+3 side bet
 - **Distribution:** `jpackage` native installers (MSI/DMG/DEB); optional Steamworks bridge

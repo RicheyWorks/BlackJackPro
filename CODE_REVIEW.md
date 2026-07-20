@@ -20,11 +20,27 @@ Follow-up PRs landed after this review resolved every desktop-relevant finding:
 | CR-7 · tolerant achievement load | ✅ Fixed | #12 |
 | CR-2 · late-surrender advice | ✅ Fixed | #13 |
 | CR-3 · multi-card soft advice | ✅ Fixed | #13 |
-| CR-4 · int-money limits | ⏳ Deferred | — |
+| CR-4 · int-money limits | ⚠️ Partly fixed | — |
 | CR-8 · mutable rules / concurrency | ⏳ Deferred | — |
 | CR-9 · RNG / mid-round reshuffle | ⏳ Deferred | — |
 
-CR-4/8/9 are intentionally deferred — they only matter for a high-limit, served, or real-money build (the `platform/` module already assumes a different money model).
+**CR-4 was mis-triaged and has been revisited.** It bundled two unrelated
+problems, and deferring them together was wrong:
+
+- **Flooring — fixed.** The 3:2 payout and the surrender refund both rounded
+  *against* the player, shorting every odd-dollar bet by exactly \$0.50. That is
+  not a high-limit concern: with 1/5/25/100/500 chips it is the common case — a
+  single \$5 chip, a single \$25 chip, or any odd number of \$5 chips all landed
+  on it. Every division is now centralised in `BlackjackRules` and rounds the
+  player's way (payouts and refunds up, the insurance premium down), which is
+  also how a casino settles a half it cannot pay.
+- **Overflow — still open.** `blackjackPayout` now multiplies in `long`, but
+  `bet * 2` in `settle()` and the accumulating `totalWagered`/`totalReturned`
+  counters remain `int`. Reachable only via an inflated bankroll, so it stays
+  deferred.
+
+CR-8/9 remain deferred — they only matter for a served or real-money build (the
+`platform/` module already assumes a different money model).
 
 ## What's solid (verified)
 

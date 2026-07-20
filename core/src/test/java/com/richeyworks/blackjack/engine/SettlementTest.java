@@ -75,12 +75,12 @@ class SettlementTest {
         fail("no dealer-ace deal found in seed range");
     }
 
-    @Test void naturalBlackjackPayoutFloorsBetTimesThreeOverTwo() {
+    @Test void naturalBlackjackPayoutRoundsTheHalfToThePlayer() {
         BlackjackRules r = new BlackjackRules();
-        assertEquals(1,   r.blackjackPayout(1),   "$1 natural must pay 1, not 0");
-        assertEquals(7,   r.blackjackPayout(5),   "$5 natural pays floor(7.5)=7");
-        assertEquals(37,  r.blackjackPayout(25),  "$25 natural pays floor(37.5)=37");
-        assertEquals(150, r.blackjackPayout(100), "$100 natural pays 150");
+        assertEquals(2,   r.blackjackPayout(1),   "$1 natural must pay 2, never 0");
+        assertEquals(8,   r.blackjackPayout(5),   "$5 natural pays ceil(7.5)=8");
+        assertEquals(38,  r.blackjackPayout(25),  "$25 natural pays ceil(37.5)=38");
+        assertEquals(150, r.blackjackPayout(100), "$100 natural pays 150 exactly");
         final int oddBet = 5;
         for (long seed = 0; seed < 20000; seed++) {
             Engine e = new Engine(START, new Random(seed), new BlackjackRules());
@@ -91,7 +91,8 @@ class SettlementTest {
             boolean dealerBJ = e.dealer().value() == 21 && e.dealer().size() == 2;
             if (!playerBJ || dealerBJ) continue;
             assertEquals(Phase.BETTING, e.phase());
-            assertEquals(START + oddBet * 3 / 2, e.bankroll(), "odd-bet 3:2 natural payout");
+            // ceil, not floor: a $5 natural is worth 7.50 and pays 8.
+            assertEquals(START + 8, e.bankroll(), "odd-bet 3:2 natural payout");
             return;
         }
         fail("no odd-bet player natural blackjack found");

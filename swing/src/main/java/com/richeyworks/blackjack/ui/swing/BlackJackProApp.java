@@ -699,7 +699,8 @@ public final class BlackJackProApp extends JFrame {
               + "  * Double on any first two cards\n"
               + "  * Split up to " + (engine.rules().maxSplits + 1) + " hands\n"
               + "  * Late surrender on first two cards\n"
-              + "  * Insurance offered on dealer Ace; pays 2:1";
+              + "  * Insurance offered on dealer Ace; pays 2:1\n"
+              + "  * Odd half-dollars round in your favour";
         JOptionPane.showMessageDialog(this, text, "Rules", JOptionPane.INFORMATION_MESSAGE);
     }
 
