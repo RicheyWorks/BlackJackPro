@@ -7,6 +7,17 @@
  * Signed release:   gradlew :android:assembleRelease
  *                   (after configuring signingConfig below with a real keystore)
  */
+/*
+ * AGP and Gradle are version-locked. AGP 8.5 requires Gradle 8.7+, and the whole
+ * AGP 8.x line pairs with Gradle 8.x — AGP 9.0 is the first release that accepts
+ * Gradle 9 (and needs 9.1.0+). So the wrapper cannot move to Gradle 9 while this
+ * stays on 8.5.2; the two have to be upgraded together.
+ *
+ * This is easy to miss because CI never builds the APK — it runs
+ * :gdx-desktop:classes as the compile check for the mobile port. A Gradle 9
+ * wrapper bump would go green in CI and break assembleDebug only on a developer
+ * machine. Matrix: https://developer.android.com/build/releases/about-agp
+ */
 plugins {
     id("com.android.application") version "8.5.2"
 }

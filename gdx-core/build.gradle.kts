@@ -10,8 +10,13 @@ java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(21))
     }
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+}
+
+// See the note in core/build.gradle.kts: --release actually compiles against the
+// Java 17 class library, where source/target only stamp the bytecode version and
+// would let a Java 18+ call through to fail on an Android device at runtime.
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(17)
 }
 
 val gdxVersion = "1.12.1"
