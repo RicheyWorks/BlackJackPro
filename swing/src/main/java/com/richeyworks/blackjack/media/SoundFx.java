@@ -8,17 +8,21 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Procedurally synthesized sound effects. No audio files required — every
- * sample is generated on the fly so the game ships with sound out of the box.
+ * Plays the game's sound effects on the desktop.
  *
- * Uses a small single-thread pool so playback never blocks the EDT and one SFX
- * doesn't queue behind another. Each Effect writes its sample buffer to a
- * fresh {@link SourceDataLine} and closes it when done.
+ * <p>The effects themselves live in {@link GameSounds} in {@code core}: this
+ * class is now only the {@code javax.sound} plumbing. That split is what let
+ * the mobile build get audio — Android has no {@code javax.sound.sampled}, so
+ * while the synthesis lived here the libGDX port was silent.
+ *
+ * <p>Uses a small single-thread pool so playback never blocks the EDT and one
+ * effect doesn't queue behind another. Each effect writes its buffer to a fresh
+ * {@link SourceDataLine} and closes it in a finally.
  */
 public final class SoundFx {
 
-    private static final AudioFormat FORMAT =
-            new AudioFormat(44_100f, 16, 1, true, false);
+    private static final AudioFormat FORMAT = new AudioFormat(
+            ToneSynth.SAMPLE_RATE, 16, 1, true, false);
 
     private final ExecutorService pool = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "blackjack-sfx");
@@ -40,109 +44,27 @@ public final class SoundFx {
     public boolean muted()         { return muted; }
 
     /* ----------------------------------------------------------------------- */
-    /* Preset effects                                                          */
+    /* Effects                                                                 */
     /* ----------------------------------------------------------------------- */
 
-    /** Soft tap when a chip is placed on the table. */
-    public void chipClick() {
-        playToneBurst(880f, 0.05, 0.4, ToneShape.SQUARE);
-    }
+    public void chipClick()         { play(GameSounds.CHIP_CLICK); }
+    public void cardSnap()          { play(GameSounds.CARD_SNAP); }
+    public void winSting()          { play(GameSounds.WIN); }
+    public void loseSting()         { play(GameSounds.LOSE); }
+    public void blackjackFanfare()  { play(GameSounds.BLACKJACK); }
+    public void pushBeep()          { play(GameSounds.PUSH); }
+    public void achievement()       { play(GameSounds.ACHIEVEMENT); }
 
-    /** Crisp snap when a card is dealt. */
-    public void cardSnap() {
-        playToneBurst(2200f, 0.04, 0.5, ToneShape.NOISE);
-    }
-
-    /** Two-tone "win" sting. */
-    public void winSting() {
-        playSequence(new ToneSpec[]{
-                new ToneSpec(523.25f, 0.10, ToneShape.SINE),    // C5
-                new ToneSpec(659.25f, 0.10, ToneShape.SINE),    // E5
-                new ToneSpec(783.99f, 0.18, ToneShape.SINE)     // G5
-        });
-    }
-
-    /** Descending "loss" sting. */
-    public void loseSting() {
-        playSequence(new ToneSpec[]{
-                new ToneSpec(440.00f, 0.10, ToneShape.SINE),
-                new ToneSpec(349.23f, 0.12, ToneShape.SINE),
-                new ToneSpec(261.63f, 0.22, ToneShape.SINE)
-        });
-    }
-
-    /** Triumphant fanfare for a natural blackjack. */
-    public void blackjackFanfare() {
-        playSequence(new ToneSpec[]{
-                new ToneSpec(523.25f, 0.08, ToneShape.SINE),
-                new ToneSpec(659.25f, 0.08, ToneShape.SINE),
-                new ToneSpec(783.99f, 0.08, ToneShape.SINE),
-                new ToneSpec(1046.5f, 0.30, ToneShape.SINE)
-        });
-    }
-
-    /** Soft "push" — neutral. */
-    public void pushBeep() {
-        playToneBurst(440f, 0.18, 0.35, ToneShape.SINE);
-    }
-
-    /** Achievement unlock chime. */
-    public void achievement() {
-        playSequence(new ToneSpec[]{
-                new ToneSpec(880f,  0.06, ToneShape.SINE),
-                new ToneSpec(1318f, 0.20, ToneShape.SINE)
-        });
-    }
-
-    /* ----------------------------------------------------------------------- */
-    /* Synthesis                                                               */
-    /* ----------------------------------------------------------------------- */
-
-    private void playToneBurst(float freq, double seconds, double gain, ToneShape shape) {
+    /** Render and play an effect off the EDT. Silent when muted. */
+    public void play(GameSounds sound) {
         if (muted) return;
-        pool.submit(() -> writeSample(synthesize(freq, seconds, gain, shape)));
+        final float v = volume;
+        pool.submit(() -> writeSample(sound.render(v)));
     }
 
-    private void playSequence(ToneSpec[] notes) {
-        if (muted) return;
-        pool.submit(() -> {
-            for (ToneSpec n : notes) {
-                writeSample(synthesize(n.freq, n.seconds, 0.45, n.shape));
-            }
-        });
-    }
-
-    private byte[] synthesize(float freq, double seconds, double gain, ToneShape shape) {
-        int samples = (int) (seconds * FORMAT.getSampleRate());
-        byte[] data = new byte[samples * 2];
-        double phaseStep = 2 * Math.PI * freq / FORMAT.getSampleRate();
-        double phase = 0;
-        java.util.concurrent.ThreadLocalRandom rng = java.util.concurrent.ThreadLocalRandom.current();
-
-        for (int i = 0; i < samples; i++) {
-            double v;
-            switch (shape) {
-                case SQUARE: v = Math.signum(Math.sin(phase)); break;
-                case NOISE:  v = (rng.nextDouble() * 2 - 1);   break;
-                case SAW:    v = (2 * (phase / (2 * Math.PI) - Math.floor(phase / (2 * Math.PI) + 0.5))); break;
-                case SINE:
-                default:     v = Math.sin(phase);
-            }
-            // simple ADSR-ish envelope: linear fade-in/out
-            double env = envelope(i, samples);
-            int   s   = (int) (v * env * gain * volume * Short.MAX_VALUE);
-            data[2 * i    ] = (byte) (s & 0xFF);
-            data[2 * i + 1] = (byte) ((s >> 8) & 0xFF);
-            phase += phaseStep;
-        }
-        return data;
-    }
-
-    private double envelope(int i, int total) {
-        double attack  = Math.min(1.0, i / (total * 0.05));
-        double release = Math.min(1.0, (total - i) / (total * 0.10));
-        return Math.min(attack, release);
-    }
+    /* ----------------------------------------------------------------------- */
+    /* Playback                                                                */
+    /* ----------------------------------------------------------------------- */
 
     /**
      * Play one buffer on a fresh line, closing it whether or not playback
@@ -151,6 +73,7 @@ public final class SoundFx {
      * leaks exhaust the mixer and silence the game permanently.
      */
     private void writeSample(byte[] data) {
+        if (data.length == 0) return;
         SourceDataLine line = null;
         try {
             line = AudioSystem.getSourceDataLine(FORMAT);
@@ -173,10 +96,4 @@ public final class SoundFx {
     }
 
     public void shutdown() { pool.shutdownNow(); }
-
-    private enum ToneShape { SINE, SQUARE, SAW, NOISE }
-    private static final class ToneSpec {
-        final float freq; final double seconds; final ToneShape shape;
-        ToneSpec(float f, double s, ToneShape sh) { freq = f; seconds = s; shape = sh; }
-    }
 }

@@ -1,5 +1,7 @@
 package com.richeyworks.blackjack.plugin;
 
+import com.richeyworks.blackjack.sidebet.SideBet;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;

@@ -1,5 +1,7 @@
 package com.richeyworks.blackjack.plugin;
 
+import com.richeyworks.blackjack.sidebet.SideBet;
+
 import java.util.List;
 
 /**

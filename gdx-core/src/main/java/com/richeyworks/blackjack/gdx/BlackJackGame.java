@@ -28,6 +28,7 @@ public final class BlackJackGame extends Game {
     private final Platform platform;
     private GameSession    session;
     private TableScreen    table;
+    private final GdxSfx   sfx = new GdxSfx();
 
     public BlackJackGame(Platform platform) {
         this.platform = platform;
@@ -37,6 +38,9 @@ public final class BlackJackGame extends Game {
 
     /** Persistent player state. Available from {@link #create()} onwards. */
     public GameSession session() { return session; }
+
+    /** Sound effects, shared by every screen. */
+    public GdxSfx sfx() { return sfx; }
 
     /** Colours for the active theme. Never null. */
     public GdxPalette palette() { return palette; }
@@ -57,6 +61,8 @@ public final class BlackJackGame extends Game {
         // the same settings key the desktop build uses, so a shared data
         // directory keeps one choice across both.
         palette = new GdxPalette(Palettes.byId(session.settings().themeId));
+        sfx.setMuted(!session.settings().sfxEnabled);
+        sfx.setVolume(session.settings().sfxVolume);
         table   = new TableScreen(this);
         setScreen(table);
     }
@@ -85,6 +91,7 @@ public final class BlackJackGame extends Game {
         if (session != null) session.persist();
         super.dispose();            // hides the active screen
         if (table != null) table.dispose();   // and disposes the menu it owns
+        sfx.dispose();
     }
 
     /**

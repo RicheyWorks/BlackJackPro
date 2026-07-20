@@ -1,4 +1,4 @@
-package com.richeyworks.blackjack.plugin;
+package com.richeyworks.blackjack.sidebet;
 
 import com.richeyworks.blackjack.engine.Card;
 

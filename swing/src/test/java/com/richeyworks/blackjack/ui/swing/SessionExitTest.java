@@ -4,8 +4,8 @@ import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.persist.SaveManager;
-import com.richeyworks.blackjack.plugin.SideBet;
-import com.richeyworks.blackjack.plugin.SideBetManager;
+import com.richeyworks.blackjack.sidebet.SideBet;
+import com.richeyworks.blackjack.sidebet.SideBetManager;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;

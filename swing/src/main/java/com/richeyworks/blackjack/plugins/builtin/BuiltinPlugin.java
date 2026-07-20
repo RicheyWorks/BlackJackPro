@@ -3,8 +3,9 @@ package com.richeyworks.blackjack.plugins.builtin;
 import com.richeyworks.blackjack.plugin.AiPlugin;
 import com.richeyworks.blackjack.plugin.BlackJackPlugin;
 import com.richeyworks.blackjack.plugin.PluginManifest;
-import com.richeyworks.blackjack.plugin.SideBet;
 import com.richeyworks.blackjack.plugin.TableTheme;
+import com.richeyworks.blackjack.sidebet.SideBet;
+import com.richeyworks.blackjack.sidebet.TwentyOnePlusThree;
 
 import java.util.List;
 

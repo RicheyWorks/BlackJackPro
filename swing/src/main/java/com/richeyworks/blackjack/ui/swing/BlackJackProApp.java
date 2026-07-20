@@ -12,9 +12,9 @@ import com.richeyworks.blackjack.media.SoundFx;
 import com.richeyworks.blackjack.persist.AppPaths;
 import com.richeyworks.blackjack.persist.SaveManager;
 import com.richeyworks.blackjack.plugin.PluginRegistry;
-import com.richeyworks.blackjack.plugin.SideBetManager;
+import com.richeyworks.blackjack.sidebet.SideBetManager;
 import com.richeyworks.blackjack.plugin.TableTheme;
-import com.richeyworks.blackjack.plugins.builtin.HiLoCounterAi;
+import com.richeyworks.blackjack.strategy.HiLoCounter;
 import com.richeyworks.blackjack.settings.GameSettings;
 import com.richeyworks.blackjack.steam.SteamBridge;
 import com.richeyworks.blackjack.table.Personas;
@@ -106,7 +106,7 @@ public final class BlackJackProApp extends JFrame {
     private final JLabel sideLabel = new JLabel();
     private final SideBetManager sideBets;
     private String sideMsg = "";
-    private final HiLoCounterAi counter;
+    private final HiLoCounter counter;
     private int lastShoeRemaining;
     private boolean showCount = true;
     private final JLabel countLabel = new JLabel();
@@ -143,9 +143,10 @@ public final class BlackJackProApp extends JFrame {
         this.theme        = theme;
         this.sideBets     = new SideBetManager(
                 plugins.sideBets().isEmpty() ? null : plugins.sideBets().get(0));
-        HiLoCounterAi hilo = null;
-        for (var ai : plugins.aiStrategies()) if (ai instanceof HiLoCounterAi h) { hilo = h; break; }
-        this.counter = hilo;
+        // Owned directly rather than fished out of the plugin list: counting is
+        // core logic now, so the display works whether or not a plugin ships an
+        // AI that happens to wrap it.
+        this.counter = new HiLoCounter();
         this.lastShoeRemaining = engine.shoe().remaining();
 
         setDefaultCloseOperation(EXIT_ON_CLOSE);

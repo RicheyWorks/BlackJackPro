@@ -14,7 +14,7 @@ Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing 
 - **Table chatter:** three characters who react to play with ~520 lines of dialogue; they never encourage a bigger bet, and a test enforces it
 - **Plugins:** ServiceLoader + external JARs — Hi-Lo counter AI, 21+3 side bet
 - **Distribution:** `jpackage` native installers (MSI/DMG/DEB); optional Steamworks bridge
-- **Mobile (WIP):** libGDX `TableScreen` with all seven themes, table chatter, settings/stats menu, and bankroll/stats/achievement persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
+- **Mobile (WIP):** libGDX `TableScreen` at feature parity with the desktop on everything platform-neutral — all seven themes, sound, table chatter, 21+3, the Hi-Lo counter, settings/stats menu, and persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
 
 ## Build & run
 
@@ -49,7 +49,7 @@ music feature stays quietly off until you add some.
 |------|--------|
 | Core engine + tests | Working — JUnit 5; CI green on Ubuntu, Windows, macOS |
 | Swing desktop | Primary polished build — themes, plugins, achievements, saves |
-| libGDX + Android | Playable — themes, chatter, settings menu, saves/stats/achievements persist |
+| libGDX + Android | Playable — themes, sound, chatter, side bet, counter, settings, persistence |
 | iOS / mobile polish | Not started — animated cards, sound, settings UI on mobile |
 
 ## Tech stack
@@ -61,7 +61,8 @@ music feature stays quietly off until you add some.
 ## Layout
 
 ```
-core/          Rules engine, settings, saves, achievements (no UI)
+core/          Rules engine, settings, saves, achievements, themes, chatter,
+               sound synthesis, side bets, counting (no UI, no AWT)
 swing/         Desktop UI, plugins, media, Steam bridge
 gdx-core/      libGDX game + TableScreen
 gdx-desktop/   LWJGL3 launcher
