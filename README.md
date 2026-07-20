@@ -36,6 +36,11 @@ Requires **JDK 21** on PATH. The Gradle wrapper is included — no separate Grad
 
 **Windows shortcut:** double-click `run_pro.bat` (runs `:swing:run`).
 
+**Background music (optional):** drop `.wav` files into `resources/music/` — see
+[`resources/music/README.md`](resources/music/README.md). WAV only; stock Java
+can't decode MP3. Audio is gitignored, so the repo ships without tracks and the
+music feature stays quietly off until you add some.
+
 ## Project status
 
 | Area | Status |
