@@ -74,16 +74,20 @@ public final class MenuScreen extends InputAdapter implements Screen {
     }
 
     private void buildRows() {
-        float x = 60, w = 540, h = 54, y = WORLD_H - 150;
+        float x = 60, w = 540, h = 46, y = WORLD_H - 130;
         for (GameSession.Rule rule : GameSession.Rule.values()) {
             rows.add(new Row(new Rectangle(x, y, w, h), rule));
-            y -= h + 14;
+            y -= h + 10;
         }
-        y -= 20;
+        y -= 14;
         rows.add(new Row(new Rectangle(x, y, w, h), Action.THEME));
-        y -= h + 14;
+        y -= h + 10;
+        rows.add(new Row(new Rectangle(x, y, w, h), Action.SOUND));
+        y -= h + 10;
+        rows.add(new Row(new Rectangle(x, y, w, h), Action.VOLUME));
+        y -= h + 10;
         rows.add(new Row(new Rectangle(x, y, w, h), Action.RESET));
-        y -= h + 14;
+        y -= h + 10;
         rows.add(new Row(new Rectangle(x, y, w, h), Action.BACK));
     }
 
@@ -132,6 +136,10 @@ public final class MenuScreen extends InputAdapter implements Screen {
                     ? r.rule.label() + "   [" + (session.rule(r.rule) ? "ON" : "OFF") + "]"
                     : r.action == Action.THEME
                         ? "Theme: " + game.palette().name() + "   (tap to change)"
+                    : r.action == Action.SOUND
+                        ? "Sound effects   [" + (game.sfx().muted() ? "OFF" : "ON") + "]"
+                    : r.action == Action.VOLUME
+                        ? "Volume: " + Math.round(game.sfx().volume() * 100) + "%   (tap to step)"
                     : r.action == Action.RESET
                         ? (confirmingReset ? "Tap again to confirm reset" : "New session (reset bankroll & stats)")
                         : "Back to table";
@@ -221,6 +229,29 @@ public final class MenuScreen extends InputAdapter implements Screen {
             confirmingReset = false;
             return;
         }
+        if (r.action == Action.SOUND) {
+            boolean on = game.sfx().muted();          // toggling, so invert
+            game.sfx().setMuted(!on);
+            session.settings().sfxEnabled = on;
+            session.persist();
+            if (!game.sfx().muted()) game.sfx().chipClick();   // audible confirmation
+            notice = "Sound effects " + (game.sfx().muted() ? "off" : "on") + " - saved";
+            confirmingReset = false;
+            return;
+        }
+        if (r.action == Action.VOLUME) {
+            // Steps in quarters and wraps. A slider needs a drag gesture and
+            // precise hit-testing; four taps covers the useful range on a phone.
+            float next = game.sfx().volume() + 0.25f;
+            if (next > 1.01f) next = 0.25f;
+            game.sfx().setVolume(next);
+            session.settings().sfxVolume = next;
+            session.persist();
+            if (!game.sfx().muted()) game.sfx().chipClick();   // hear the new level
+            notice = "Volume " + Math.round(next * 100) + "% - saved";
+            confirmingReset = false;
+            return;
+        }
         if (r.action == Action.RESET) {
             if (!confirmingReset) {
                 confirmingReset = true;
@@ -268,7 +299,7 @@ public final class MenuScreen extends InputAdapter implements Screen {
 
     /* ---------- rows ---------- */
 
-    private enum Action { THEME, RESET, BACK }
+    private enum Action { THEME, SOUND, VOLUME, RESET, BACK }
 
     /** A tappable row: either a rule toggle or a plain action. */
     private static final class Row {
