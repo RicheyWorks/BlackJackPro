@@ -21,9 +21,22 @@ public final class Engine {
 
     /** Per-hand results of the most recently settled round, parallel to {@link #hands()}. */
     private final List<Outcome> lastOutcomes = new ArrayList<>();
-    /** Bankroll (including chips already on the felt) when the current round was dealt. */
-    private int roundStartBankroll;
-    /** Net change to the bankroll across the most recently settled round. */
+    /*
+     * The round's own money, accumulated by engine operations only.
+     *
+     * This used to be a bankroll snapshot taken at deal() and subtracted at
+     * settle() -- which silently absorbed anything the caller did to the
+     * bankroll in between. The 21+3 side bet is settled by the front end with
+     * setBankroll() right after the deal, so a side-bet win landed inside the
+     * round's net and the table displayed the wrong result for the hand. A
+     * doubled $50 loss alongside a $30 side-bet win reported -20 instead of -50.
+     *
+     * Tracking the wagers and returns the engine itself performs makes the
+     * figure immune to whatever else touches the bankroll.
+     */
+    private int roundWagered;
+    private int roundReturned;
+    /** Published at settlement, so this describes the last completed round. */
     private int lastNet;
 
     public Engine(int startingBankroll, Random rng) {
@@ -65,7 +78,9 @@ public final class Engine {
      * Net change to the bankroll across the most recently settled round —
      * positive if the player finished ahead. Covers the main stake plus any
      * double, split, insurance, or surrender. Side bets settled outside the
-     * engine are not included.
+     * engine are genuinely not included -- this counts only money the engine
+     * itself moved, so a caller adjusting the bankroll mid-round cannot
+     * contaminate it.
      */
     public int lastNet() { return lastNet; }
 
@@ -141,11 +156,10 @@ public final class Engine {
         if (!canDeal()) throw new IllegalStateException("cannot deal");
         if (shoe.needsShuffle()) shoe.reshuffle();
 
-        // Everything the player owns right now, including the chips already
-        // moved onto the felt -- the baseline for this round's net result.
-        roundStartBankroll = bankroll + pendingBet;
         lastOutcomes.clear();
-        lastNet = 0;
+        roundWagered  = 0;
+        roundReturned = 0;
+        lastNet       = 0;
 
         for (Hand h : player) h.reset();
         player.clear();
@@ -153,6 +167,7 @@ public final class Engine {
         Hand first = new Hand();
         first.bet(pendingBet);
         stats.totalWagered += first.bet();
+        roundWagered += first.bet();
         pendingBet = 0;
         player.add(first);
         activeHand   = 0;
@@ -182,6 +197,7 @@ public final class Engine {
             if (bankroll < cost) throw new IllegalStateException("not enough chips for insurance");
             bankroll    -= cost;
             stats.totalWagered += cost;   // insurance is a wager; keep accounting consistent
+            roundWagered += cost;
             insuranceBet = cost;
         } else {
             insuranceBet = 0;
@@ -196,6 +212,7 @@ public final class Engine {
                 int payout = insuranceBet + rules.insurancePayout(insuranceBet);
                 bankroll  += payout;
                 stats.totalReturned += payout;
+                roundReturned += payout;
             }
             insuranceBet = 0;
             phase = Phase.SETTLE;
@@ -231,6 +248,7 @@ public final class Engine {
         Hand h = active();
         bankroll -= h.bet();
         stats.totalWagered += h.bet();
+        roundWagered += h.bet();
         h.doubleBet();
         stats.doubles++;
         h.add(shoe.deal());
@@ -247,6 +265,7 @@ public final class Engine {
         h.markFromSplit();
         bankroll -= h.bet();
         stats.totalWagered += h.bet();
+        roundWagered += h.bet();
         stats.splits++;
         player.add(activeHand + 1, n);
 
@@ -272,6 +291,7 @@ public final class Engine {
         int refund = rules.surrenderRefund(h.bet());
         bankroll  += refund;
         stats.totalReturned += refund;
+        roundReturned += refund;
         phase = Phase.SETTLE;
         settle();
     }
@@ -329,6 +349,7 @@ public final class Engine {
                 int payout = h.bet() + rules.blackjackPayout(h.bet());
                 bankroll          += payout;
                 stats.totalReturned += payout;
+                roundReturned += payout;
                 stats.wins++;
                 stats.blackjacks++;
                 lastOutcomes.add(Outcome.BLACKJACK);
@@ -338,6 +359,7 @@ public final class Engine {
                 if (h.isBlackjack()) {
                     bankroll        += h.bet();
                     stats.totalReturned += h.bet();
+                    roundReturned += h.bet();
                     stats.pushes++;
                     lastOutcomes.add(Outcome.PUSH);
                 } else {
@@ -351,11 +373,13 @@ public final class Engine {
                 int payout = h.bet() * 2;
                 bankroll          += payout;
                 stats.totalReturned += payout;
+                roundReturned += payout;
                 stats.wins++;
                 lastOutcomes.add(Outcome.WIN);
             } else if (pv == dv) {
                 bankroll        += h.bet();
                 stats.totalReturned += h.bet();
+                roundReturned += h.bet();
                 stats.pushes++;
                 lastOutcomes.add(Outcome.PUSH);
             } else {
@@ -364,7 +388,7 @@ public final class Engine {
             }
         }
         stats.peakBankroll = Math.max(stats.peakBankroll, bankroll);
-        lastNet = bankroll - roundStartBankroll;
+        lastNet = roundReturned - roundWagered;
         phase = Phase.BETTING;
     }
 }
