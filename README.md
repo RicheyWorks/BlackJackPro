@@ -8,11 +8,13 @@ Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing 
 
 ## Features
 
-- **House rules:** 6-deck shoe (~75% penetration), 3:2 blackjack, push on tie, double on any two cards, split up to 4 hands (split aces get one card), late surrender, insurance (2:1), dealer stands on soft 17 (toggle in Options)
+- **House rules:** 6-deck shoe (~75% penetration), 3:2 blackjack, push on tie, double on any two cards, split up to 4 hands (split aces get one card), late surrender, insurance (2:1), dealer stands on soft 17 (toggle in Options). The game pays whole dollars, and any odd half rounds in the player's favour — a \$25 natural pays 38, not 37
 - **Swing desktop:** Custom-painted felt/cards/chips, procedural SFX, settings dialog, 12 achievements with toasts, bankroll + stats persistence
-- **Plugins:** ServiceLoader + external JARs — built-in Neon theme, Hi-Lo counter AI, 21+3 side bet
+- **Themes:** seven table looks (Classic Felt, Neon, Midnight, Crimson Room, Desert Sun, Ink, Brass Deco) defined once in `core` and rendered by both the Swing and libGDX front ends
+- **Table chatter:** three characters who react to play with ~520 lines of dialogue; they never encourage a bigger bet, and a test enforces it
+- **Plugins:** ServiceLoader + external JARs — Hi-Lo counter AI, 21+3 side bet
 - **Distribution:** `jpackage` native installers (MSI/DMG/DEB); optional Steamworks bridge
-- **Mobile (WIP):** libGDX `TableScreen`, Android debug APK; iOS not wired yet
+- **Mobile (WIP):** libGDX `TableScreen` at feature parity with the desktop on everything platform-neutral — all seven themes, sound, table chatter, 21+3, the Hi-Lo counter, settings/stats menu, and persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
 
 ## Build & run
 
@@ -36,14 +38,19 @@ Requires **JDK 21** on PATH. The Gradle wrapper is included — no separate Grad
 
 **Windows shortcut:** double-click `run_pro.bat` (runs `:swing:run`).
 
+**Background music (optional):** drop `.wav` files into `resources/music/` — see
+[`resources/music/README.md`](resources/music/README.md). WAV only; stock Java
+can't decode MP3. Audio is gitignored, so the repo ships without tracks and the
+music feature stays quietly off until you add some.
+
 ## Project status
 
 | Area | Status |
 |------|--------|
 | Core engine + tests | Working — JUnit 5; CI green on Ubuntu, Windows, macOS |
 | Swing desktop | Primary polished build — themes, plugins, achievements, saves |
-| libGDX + Android | Foundation landed — basic table UI, debug APK builds |
-| iOS / mobile polish | Not started — animated cards, haptics, achievement port |
+| libGDX + Android | Playable — themes, sound, chatter, side bet, counter, settings, persistence |
+| iOS / mobile polish | Not started — animated cards, sound, settings UI on mobile |
 
 ## Tech stack
 
@@ -54,7 +61,8 @@ Requires **JDK 21** on PATH. The Gradle wrapper is included — no separate Grad
 ## Layout
 
 ```
-core/          Rules engine, settings, saves, achievements (no UI)
+core/          Rules engine, settings, saves, achievements, themes, chatter,
+               sound synthesis, side bets, counting (no UI, no AWT)
 swing/         Desktop UI, plugins, media, Steam bridge
 gdx-core/      libGDX game + TableScreen
 gdx-desktop/   LWJGL3 launcher

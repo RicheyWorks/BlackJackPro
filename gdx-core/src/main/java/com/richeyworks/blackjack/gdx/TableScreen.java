@@ -14,14 +14,23 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.richeyworks.blackjack.achievement.AchievementService;
 import com.richeyworks.blackjack.engine.BasicStrategy;
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Hand;
+import com.richeyworks.blackjack.engine.Outcome;
 import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.engine.Rank;
+import com.richeyworks.blackjack.engine.SessionStats;
+import com.richeyworks.blackjack.sidebet.SideBetManager;
+import com.richeyworks.blackjack.sidebet.TwentyOnePlusThree;
+import com.richeyworks.blackjack.strategy.HiLoCounter;
+import com.richeyworks.blackjack.table.Personas;
+import com.richeyworks.blackjack.table.Remark;
+import com.richeyworks.blackjack.table.TableChatter;
+import com.richeyworks.blackjack.table.TableEvent;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,7 +49,34 @@ public final class TableScreen extends InputAdapter implements Screen {
     private static final float CARD_W  = 110f, CARD_H = 154f;
 
     private final BlackJackGame game;
+    private final GameSession   session;
     private final Engine        engine;
+
+    /** Rounds already post-processed, so a result is announced exactly once. */
+    private int processedHands;
+    /** Consecutive winning rounds, for the streak achievement. */
+    private int winStreak;
+    /** Built on first use and reused, so returning keeps the hand in progress. */
+    private MenuScreen menu;
+
+    /** The characters at the table. They talk; they never play a hand. */
+    private final TableChatter chatter =
+            new TableChatter(Personas.defaults(), new java.util.Random());
+    /** Consecutive losing rounds, the mirror of winStreak. */
+    private int lossStreak;
+    private int lastShoeSeen;
+    private boolean greeted;
+
+    /** 21+3, now that the side-bet logic lives in core rather than swing/. */
+    private final SideBetManager sideBets = new SideBetManager(new TwentyOnePlusThree());
+    private String sideMsg = "";
+    /** Hi-Lo running count, same class the desktop HUD uses. */
+    private final HiLoCounter counter = new HiLoCounter();
+    /** Cards already fed to the counter this round, so none is counted twice. */
+    private int observedCards;
+
+    /** Live lookup, not a field: switching theme must apply on the next frame. */
+    private GdxPalette pal() { return game.palette(); }
 
     private final OrthographicCamera camera = new OrthographicCamera();
     private final Viewport           viewport = new FitViewport(WORLD_W, WORLD_H, camera);
@@ -56,11 +92,27 @@ public final class TableScreen extends InputAdapter implements Screen {
     private String  flashText;
 
     public TableScreen(BlackJackGame game) {
-        this.game   = game;
-        this.engine = new Engine(1000, new SecureRandom());
+        this.game    = game;
+        this.session = game.session();
+        // The engine comes from the session, which has already restored the
+        // bankroll and lifetime stats from disk. Constructing a fresh
+        // Engine(1000, ...) here is what used to throw away every player's
+        // progress on each launch.
+        this.engine  = session.engine();
+        this.processedHands = engine.stats().hands;
         bigFont.getData().setScale(2f);
-        Gdx.input.setInputProcessor(this);
         buildButtons();
+        statusText = engine.stats().hands > 0
+                ? "Welcome back — bankroll $" + engine.bankroll() + ". Place your bet."
+                : "Place your bet to begin.";
+
+        // Android has a native notification affordance; the desktop Platform
+        // falls back to stdout. Either way the player finds out they unlocked
+        // something, which the port had no way of telling them before.
+        session.achievements().onUnlock(a -> {
+            game.sfx().achievement();
+            game.platform().toast("Achievement unlocked: " + a.name());
+        });
     }
 
     /* ---------- button layout ---------- */
@@ -74,12 +126,26 @@ public final class TableScreen extends InputAdapter implements Screen {
             buttons.add(b);
             x += size + gap;
         }
-        buttons.add(action(x, y, 90, 50, "Clear",   () -> { engine.clearBet();     statusText = "Bet cleared."; }));
+        buttons.add(action(x, y, 90, 50, "Clear", () -> {
+            if (engine.phase() != Phase.BETTING) return;
+            engine.clearBet();
+            int refund = sideBets.clear();
+            if (refund > 0) engine.setBankroll(engine.bankroll() + refund);
+            sideMsg = "";
+            statusText = "Bet cleared.";
+        }));
+        x += 100;
+        buttons.add(action(x, y, 90, 50, "21+3", this::placeSideBet));
         x += 100;
 
         // action row
         float ay = 100;
-        buttons.add(action(30,        ay, 90, 50, "Deal",      () -> safe(engine::deal,       "Place a bet first.")));
+        buttons.add(action(30,        ay, 90, 50, "Deal", () -> safe(() -> {
+            sideMsg = "";
+            observedCards = 0;      // the deal replaces every hand
+            engine.deal();
+            resolveSideBet();
+        }, "Place a bet first.")));
         buttons.add(action(130,       ay, 90, 50, "Hit",       () -> safe(engine::hit,        null)));
         buttons.add(action(230,       ay, 90, 50, "Stand",     () -> safe(engine::stand,      null)));
         buttons.add(action(330,       ay, 90, 50, "Double",    () -> safe(engine::doubleDown, "Cannot double.")));
@@ -88,14 +154,89 @@ public final class TableScreen extends InputAdapter implements Screen {
         buttons.add(action(630,       ay, 90, 50, "Insure",    () -> safe(() -> engine.takeInsurance(true),  "Not insurance time.")));
         buttons.add(action(730,       ay, 90, 50, "Decline",   () -> safe(() -> engine.takeInsurance(false), "Not insurance time.")));
         buttons.add(action(830,       ay, 90, 50, "Hint",      this::showHint));
+        buttons.add(action(930,       ay, 90, 50, "Menu",      this::openMenu));
+    }
+
+    /**
+     * Open settings/stats. The menu keeps a reference back to this screen, so a
+     * hand in progress survives the round trip.
+     */
+    private void openMenu() {
+        if (menu == null) menu = new MenuScreen(game, this);
+        game.setScreen(menu);
+    }
+
+    /** Called by {@link MenuScreen} after a reset so stale counters don't leak. */
+    void onSessionReset() {
+        processedHands = engine.stats().hands;
+        winStreak      = 0;
+        statusText     = "New session. Place your bet.";
     }
 
     private Button chipButton(float x, float y, float size, int value) {
         return new Button(new Rectangle(x, y, size, size),
                 "$" + value,
-                () -> { try { engine.addBet(value); game.platform().hapticTick(); }
+                () -> { try { engine.addBet(value); game.platform().hapticTick();
+                              game.sfx().chipClick(); }
                         catch (Exception ex) { flash("Not enough chips."); } },
                 value);
+    }
+
+    /** Stake $5 on 21+3. Same money flow as the desktop: debit now, settle at the deal. */
+    private void placeSideBet() {
+        if (engine.phase() != Phase.BETTING) { flash("Side bets close once the cards are out."); return; }
+        int added = sideBets.add(5, engine.bankroll());
+        if (added == 0) { flash("Not enough chips for the side bet."); return; }
+        engine.setBankroll(engine.bankroll() - added);
+        sideMsg = "";
+        game.sfx().chipClick();
+        statusText = "21+3: $" + sideBets.pending();
+    }
+
+    /**
+     * Settle 21+3 against the opening cards.
+     *
+     * <p>Keeps the engine's ledger invariant intact: the stake was already
+     * debited at placement, so both totals are recorded here alongside the
+     * payout, exactly as the desktop does it.
+     */
+    private void resolveSideBet() {
+        if (!sideBets.available() || sideBets.pending() == 0) return;
+        int stake  = sideBets.pending();
+        int payout = sideBets.resolve(engine.hands().get(0).cards(), engine.dealer().first());
+        engine.stats().totalWagered  += stake;
+        engine.stats().totalReturned += payout;
+        engine.setBankroll(engine.bankroll() + payout);
+        if (payout > 0) {
+            game.sfx().winSting();
+            sideMsg = "21+3 " + sideBets.lastOutcome() + ": +$" + (payout - stake);
+        } else {
+            sideMsg = "21+3: no win (-$" + stake + ")";
+        }
+    }
+
+    /**
+     * Feed the counter every card that has appeared since the last check.
+     *
+     * <p>The hole card is skipped while it is face down: counting it early
+     * would show the player information they cannot see at the table.
+     */
+    private void observeNewCards() {
+        if (engine.shoe().remaining() > lastShoeSeen) {
+            counter.resetCount();
+            observedCards = 0;
+        }
+        int seen = 0;
+        for (Hand h : engine.hands()) {
+            for (Card c : h.cards()) if (seen++ >= observedCards) counter.observe(c);
+        }
+        boolean holeHidden = engine.phase() == Phase.DEALING
+                || engine.phase() == Phase.INSURANCE
+                || engine.phase() == Phase.PLAYER;
+        List<Card> dealer = engine.dealer().cards();
+        int visible = holeHidden ? Math.min(1, dealer.size()) : dealer.size();
+        for (int i = 0; i < visible; i++) if (seen++ >= observedCards) counter.observe(dealer.get(i));
+        observedCards = seen;
     }
 
     private Button action(float x, float y, float w, float h, String label, Runnable run) {
@@ -105,8 +246,141 @@ public final class TableScreen extends InputAdapter implements Screen {
     /* ---------- engine wrappers ---------- */
 
     private void safe(Runnable r, String fallback) {
-        try { r.run(); }
+        try {
+            r.run();
+            game.sfx().cardSnap();
+            postAction();
+        }
         catch (RuntimeException ex) { flash(fallback != null ? fallback : ex.getMessage()); }
+    }
+
+    /**
+     * Run after any engine action. Fires {@link #onRoundComplete()} exactly once
+     * per round, keyed on the engine's hand counter rather than a phase
+     * transition — the engine settles synchronously, so a round that ends during
+     * the deal (a dealt natural, or a dealer blackjack) or straight out of the
+     * insurance prompt never presents an observable SETTLE phase to watch for.
+     */
+    private void postAction() {
+        observeNewCards();
+        if (engine.shoe().remaining() > lastShoeSeen) say(TableEvent.SHUFFLE);
+        lastShoeSeen = engine.shoe().remaining();
+        if (engine.phase() == Phase.INSURANCE) say(TableEvent.INSURANCE_OFFERED);
+        else if (engine.phase() == Phase.PLAYER && dealerShowsWeakCard())
+            say(TableEvent.DEALER_WEAK_CARD);
+        if (engine.phase() == Phase.BETTING && engine.stats().hands > processedHands) {
+            processedHands = engine.stats().hands;
+            onRoundComplete();
+        }
+    }
+
+    /** Offer one event to the table; the chatter decides whether anyone speaks. */
+    private void say(TableEvent event) {
+        chatter.react(event, System.currentTimeMillis());
+    }
+
+    /**
+     * The single most remark-worthy thing about a finished round. One event
+     * rather than several — the chatter paces remarks, so offering it five
+     * things just means four get dropped in whatever order the code checked.
+     */
+    private TableEvent mostNotable(List<Outcome> outcomes, boolean won, boolean lost) {
+        if (outcomes.contains(Outcome.BLACKJACK))  return TableEvent.PLAYER_BLACKJACK;
+
+        // Rarities first, or they would never be heard over an ordinary result.
+        if (won && engine.hands().stream().anyMatch(h -> h.size() >= 5))
+            return TableEvent.FIVE_CARD_HAND;
+        if (won && engine.hands().stream().anyMatch(Hand::doubled))
+            return TableEvent.DOUBLE_WIN;
+        if (engine.lastNet() >= Math.max(100, engine.bankroll() / 4))
+            return TableEvent.BIG_WIN;
+        if (won && engine.hands().stream().anyMatch(h -> h.value() == 21 && h.size() >= 3))
+            return TableEvent.TWENTY_ONE;
+
+        if (engine.dealer().isBust() && won)       return TableEvent.DEALER_BUST;
+        if (engine.dealer().isBlackjack())         return TableEvent.DEALER_BLACKJACK;
+        if (lost && !outcomes.contains(Outcome.BUST) && isCloseCall())
+            return TableEvent.CLOSE_CALL;
+        if (outcomes.contains(Outcome.BUST))       return TableEvent.PLAYER_BUST;
+        if (outcomes.contains(Outcome.SURRENDER))  return TableEvent.PLAYER_SURRENDER;
+        if (winStreak  >= 3)                       return TableEvent.HOT_STREAK;
+        if (lossStreak >= 3)                       return TableEvent.COLD_STREAK;
+        if (engine.bankroll() > 0 && engine.bankroll() <= 100) return TableEvent.LOW_CHIPS;
+        if (engine.stats().hands >= 60 && engine.stats().hands % 25 == 0)
+            return TableEvent.LONG_SESSION;
+        if (engine.bankroll() >= 2000) return TableEvent.RUNNING_WELL;
+        if (won)  return TableEvent.PLAYER_WIN;
+        if (lost) return TableEvent.PLAYER_LOSS;
+        return TableEvent.PUSH;
+    }
+
+    /** A surviving hand lost to the dealer by exactly one point. */
+    private boolean isCloseCall() {
+        int dv = engine.dealer().value();
+        if (dv > 21) return false;
+        return engine.hands().stream()
+                .anyMatch(h -> !h.isBust() && !h.surrendered() && dv - h.value() == 1);
+    }
+
+    /** Dealer showing 4, 5, or 6 -- the up-cards that bust them most often. */
+    private boolean dealerShowsWeakCard() {
+        if (engine.dealer().isEmpty()) return false;
+        int up = engine.dealer().first().rank().value();
+        return up >= 4 && up <= 6;
+    }
+
+    private void onRoundComplete() {
+        List<Outcome> outcomes = engine.lastOutcomes();
+        if (outcomes.isEmpty()) return;
+
+        // The engine assigns each hand an outcome as it pays it out, so what the
+        // player reads always matches what they were paid. Re-deriving it here
+        // from hand values would be a second copy of the settlement rules.
+        boolean won   = false, pushed = false, natural = false;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < outcomes.size(); i++) {
+            Outcome o = outcomes.get(i);
+            won     |= o.isWin();
+            pushed  |= o == Outcome.PUSH;
+            natural |= o == Outcome.BLACKJACK;
+            if (outcomes.size() > 1) sb.append("Hand ").append(i + 1).append(": ");
+            sb.append(o.label()).append("   ");
+        }
+        int net = engine.lastNet();
+        sb.append(net > 0 ? "+$" + net : net < 0 ? "-$" + (-net) : "even");
+        statusText = sb.toString().trim();
+
+        if (won) game.platform().hapticTick();
+
+        // Same outcome cues as the desktop, from the same synthesised effects.
+        if (natural)      game.sfx().blackjackFanfare();
+        else if (won)     game.sfx().winSting();
+        else if (pushed)  game.sfx().pushBeep();
+        else              game.sfx().loseSting();
+
+        if (won)          lossStreak = 0;
+        else if (!pushed) lossStreak++;
+        say(mostNotable(outcomes, won, !won && !pushed));
+
+        AchievementService a = session.achievements();
+        SessionStats       s = engine.stats();
+        a.increment("first_hand");
+        if (won)     { a.increment("first_win"); a.increment("ten_wins"); a.increment("fifty_wins"); }
+        if (natural)   a.increment("first_blackjack");
+        if (s.splits     > 0) a.setProgress("first_split", 1);
+        if (s.doubles    > 0) a.setProgress("first_double", 1);
+        if (s.surrenders > 0) a.setProgress("first_surrender", 1);
+        if (won && engine.dealer().isBust()) a.increment("survived_bust");
+        a.setProgress("bankroll_5k",  Math.min(5000,  engine.bankroll()));
+        a.setProgress("bankroll_10k", Math.min(10000, engine.bankroll()));
+        // A push keeps a streak alive; only a loss breaks it.
+        if (won)               winStreak++;
+        else if (!pushed)      winStreak = 0;
+        a.setProgress("survived_bust_streak", winStreak);
+
+        // Money changed hands and achievements may have unlocked, so make it
+        // durable now rather than trusting the app to get a pause() later.
+        session.persist();
     }
 
     private void showHint() {
@@ -127,7 +401,7 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     @Override
     public void render(float delta) {
-        Gdx.gl.glClearColor(BlackJackGame.FELT.r, BlackJackGame.FELT.g, BlackJackGame.FELT.b, 1);
+        Gdx.gl.glClearColor(pal().feltBottom.r, pal().feltBottom.g, pal().feltBottom.b, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         camera.update();
@@ -138,11 +412,59 @@ public final class TableScreen extends InputAdapter implements Screen {
         drawHands();
         drawButtons();
         drawHud();
+        drawChatter();
+    }
+
+    /**
+     * Draw whatever the table is saying.
+     *
+     * <p>Bubbles sit against the left and right edges at mid height, clear of
+     * the dealer along the top and the action bar along the bottom. Drawn last
+     * so they sit above the cards rather than under them.
+     */
+    private void drawChatter() {
+        long now = System.currentTimeMillis();
+        List<Remark> remarks = chatter.visibleAt(now);
+        if (remarks.isEmpty()) return;
+
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        for (Remark r : remarks) {
+            int seat = r.speaker().seat();
+            boolean left = seat != Personas.SEAT_RIGHT;
+            float bw = 300f, bh = 76f;
+            float bx = left ? 24f : WORLD_W - bw - 24f;
+            float by = switch (seat) {
+                case Personas.SEAT_LEFT  -> WORLD_H * 0.46f;
+                case Personas.SEAT_RIGHT -> WORLD_H * 0.46f;
+                default                  -> WORLD_H * 0.62f;
+            };
+            float a = r.opacityAt(now);
+
+            shapes.begin(ShapeRenderer.ShapeType.Filled);
+            shapes.setColor(pal().bubbleFill.r, pal().bubbleFill.g, pal().bubbleFill.b, a);
+            shapes.rect(bx, by, bw, bh);
+            shapes.end();
+
+            shapes.begin(ShapeRenderer.ShapeType.Line);
+            shapes.setColor(pal().bubbleName.r, pal().bubbleName.g, pal().bubbleName.b, a);
+            shapes.rect(bx, by, bw, bh);
+            shapes.end();
+
+            batch.begin();
+            font.setColor(pal().bubbleName.r, pal().bubbleName.g, pal().bubbleName.b, a);
+            font.draw(batch, r.speaker().name(), bx + 12, by + bh - 10);
+            font.setColor(pal().bubbleInk.r, pal().bubbleInk.g, pal().bubbleInk.b, a);
+            // Let libGDX wrap inside the bubble rather than measuring by hand.
+            font.draw(batch, r.text(), bx + 12, by + bh - 30, bw - 24, -1, true);
+            batch.end();
+        }
+        // Leave the colour clean for the next frame's opaque passes.
+        font.setColor(pal().text);
     }
 
     private void drawTable() {
         shapes.begin(ShapeRenderer.ShapeType.Line);
-        shapes.setColor(BlackJackGame.ACCENT);
+        shapes.setColor(pal().accent);
         shapes.arc(WORLD_W / 2, 0, 700, 0, 180);
         shapes.end();
     }
@@ -188,7 +510,7 @@ public final class TableScreen extends InputAdapter implements Screen {
         }
 
         batch.begin();
-        font.setColor(BlackJackGame.TEXT);
+        font.setColor(pal().text);
         layout.setText(font, label);
         font.draw(batch, label, cx - layout.width / 2f, topY - 8);
         batch.end();
@@ -229,11 +551,11 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     private void drawCardBack(float x, float y) {
         shapes.begin(ShapeRenderer.ShapeType.Filled);
-        shapes.setColor(0.08f, 0.13f, 0.24f, 1f);
+        shapes.setColor(pal().backFill);
         shapes.rect(x, y, CARD_W, CARD_H);
         shapes.end();
         shapes.begin(ShapeRenderer.ShapeType.Line);
-        shapes.setColor(BlackJackGame.ACCENT);
+        shapes.setColor(pal().accent);
         shapes.rect(x, y, CARD_W, CARD_H);
         for (int i = 0; i < 12; i++) {
             shapes.line(x, y + i * (CARD_H / 12), x + CARD_W, y + i * (CARD_H / 12));
@@ -242,21 +564,28 @@ public final class TableScreen extends InputAdapter implements Screen {
     }
 
     private void drawButtons() {
-        for (Button b : buttons) b.draw(shapes, batch, font, engine);
+        for (Button b : buttons) b.draw(shapes, batch, font, engine, pal());
     }
 
     private void drawHud() {
         batch.begin();
-        font.setColor(BlackJackGame.TEXT);
+        font.setColor(pal().text);
         font.draw(batch, "Bankroll: $" + engine.bankroll(),    20,  WORLD_H - 12);
         font.draw(batch, "Bet: $"      + currentBet(),        220,  WORLD_H - 12);
         font.draw(batch, "Shoe: "      + engine.shoe().remaining(), 380, WORLD_H - 12);
+        int decks = Math.max(1, engine.shoe().remaining() / 52);
+        font.draw(batch, String.format("Count: %+d (TC %+.1f)",
+                counter.runningCount(), counter.trueCount(decks)), 530, WORLD_H - 12);
+        String side = engine.phase() == Phase.BETTING && sideBets.pending() > 0
+                ? "21+3 bet: $" + sideBets.pending()
+                : sideMsg.isEmpty() ? "21+3 ready" : sideMsg;
+        font.draw(batch, side, 800, WORLD_H - 12);
         long now = System.currentTimeMillis();
         if (now < flashUntil) {
             font.setColor(1f, 0.5f, 0.5f, 1f);
             font.draw(batch, flashText, WORLD_W / 2 - 200, WORLD_H - 30);
         } else {
-            font.setColor(BlackJackGame.TEXT);
+            font.setColor(pal().text);
             font.draw(batch, statusText, WORLD_W / 2 - 200, WORLD_H - 30);
         }
         batch.end();
@@ -282,11 +611,33 @@ public final class TableScreen extends InputAdapter implements Screen {
     }
 
     @Override public void resize(int w, int h) { viewport.update(w, h, true); }
-    @Override public void show()     { }
-    @Override public void hide()     { }
-    @Override public void pause()    { }
+
+    /**
+     * Claim input here rather than in the constructor: coming back from
+     * {@link MenuScreen} has to restore this screen's processor, and a
+     * constructor only runs once.
+     */
+    @Override public void show() {
+        Gdx.input.setInputProcessor(this);
+        if (!greeted) { greeted = true; say(TableEvent.SESSION_START); }
+    }
+
     @Override public void resume()   { }
+
+    /**
+     * Android delivers this on every task switch, incoming call, and screen-off,
+     * and it is the last callback guaranteed before the process can be killed.
+     * {@link BlackJackGame#pause()} forwards here, so the save happens whether
+     * the platform notifies the game or the screen.
+     */
+    @Override public void pause()    { session.persist(); }
+
+    /** Leaving the screen for another is also a good moment to be durable. */
+    @Override public void hide()     { session.persist(); }
+
     @Override public void dispose()  {
+        session.persist();
+        if (menu != null) { menu.dispose(); menu = null; }
         shapes.dispose(); batch.dispose(); font.dispose(); bigFont.dispose();
     }
 
@@ -318,31 +669,28 @@ public final class TableScreen extends InputAdapter implements Screen {
             }
         }
 
-        void draw(ShapeRenderer shapes, SpriteBatch batch, BitmapFont font, Engine e) {
+        void draw(ShapeRenderer shapes, SpriteBatch batch, BitmapFont font, Engine e,
+                  GdxPalette pal) {
             boolean enabled = isEnabled(e);
             shapes.begin(ShapeRenderer.ShapeType.Filled);
             if (chipValue > 0) {
-                Color face;
-                switch (chipValue) {
-                    case 1:    face = new Color(0.92f, 0.92f, 0.92f, 1f); break;
-                    case 5:    face = new Color(0.75f, 0.23f, 0.17f, 1f); break;
-                    case 25:   face = new Color(0.18f, 0.49f, 0.20f, 1f); break;
-                    case 100:  face = new Color(0.11f, 0.11f, 0.11f, 1f); break;
-                    case 500:  face = new Color(0.42f, 0.10f, 0.60f, 1f); break;
-                    default:   face = Color.GOLD;
-                }
+                // One definition of chip colours for both front ends -- these
+                // stay constant across themes on purpose, so a player only
+                // learns "green is 25" once.
+                Color face = GdxPalette.chip(chipValue);
                 if (!enabled) face = new Color(face.r * 0.4f, face.g * 0.4f, face.b * 0.4f, 1f);
                 shapes.setColor(face);
                 shapes.circle(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2,
                         bounds.width / 2);
             } else {
-                shapes.setColor(enabled ? new Color(0.55f, 0.37f, 0.17f, 1f)
-                                        : new Color(0.18f, 0.14f, 0.10f, 1f));
+                Color bf = pal.buttonFace;
+                shapes.setColor(enabled ? bf
+                                        : new Color(bf.r * 0.4f, bf.g * 0.4f, bf.b * 0.4f, 1f));
                 shapes.rect(bounds.x, bounds.y, bounds.width, bounds.height);
             }
             shapes.end();
             shapes.begin(ShapeRenderer.ShapeType.Line);
-            shapes.setColor(BlackJackGame.ACCENT);
+            shapes.setColor(pal.accent);
             if (chipValue > 0) {
                 shapes.circle(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2,
                         bounds.width / 2);
@@ -352,7 +700,8 @@ public final class TableScreen extends InputAdapter implements Screen {
             shapes.end();
 
             batch.begin();
-            font.setColor(enabled ? Color.WHITE : new Color(0.6f, 0.6f, 0.6f, 1f));
+            Color ink = chipValue > 0 ? GdxPalette.chipInk(chipValue) : pal.buttonText;
+            font.setColor(enabled ? ink : new Color(0.6f, 0.6f, 0.6f, 1f));
             GlyphLayout l = new GlyphLayout(font, label);
             font.draw(batch, label, bounds.x + (bounds.width - l.width) / 2f,
                     bounds.y + (bounds.height + l.height) / 2f);

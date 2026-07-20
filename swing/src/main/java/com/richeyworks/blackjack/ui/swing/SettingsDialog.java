@@ -27,12 +27,22 @@ import java.awt.Font;
  */
 public final class SettingsDialog extends JDialog {
 
+    /**
+     * @param onSaved run after a successful save so the owner can re-sync any
+     *                duplicate controls (the soft-17 menu item mirrors a
+     *                checkbox in here and would otherwise show a stale value).
+     */
     public SettingsDialog(JFrame parent,
                           GameSettings settings,
                           Engine engine,
                           MusicService music,
-                          SoundFx sfx) {
+                          SoundFx sfx,
+                          Runnable onSaved) {
         super(parent, "Settings", true);
+        // Default is HIDE_ON_CLOSE: a dialog closed with the title-bar X would
+        // stay alive, reachable from the parent's owned-window list, and this
+        // one is constructed fresh on every open.
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
         JPanel root = new JPanel();
         root.setLayout(new BoxLayout(root, BoxLayout.Y_AXIS));
@@ -82,6 +92,7 @@ public final class SettingsDialog extends JDialog {
             }
 
             settings.save();
+            if (onSaved != null) onSaved.run();
             dispose();
         });
 

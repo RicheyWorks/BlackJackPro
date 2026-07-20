@@ -57,8 +57,9 @@ class EngineTest {
         BlackjackRules r = new BlackjackRules();
         assertEquals(150, r.blackjackPayout(100), "3:2 of 100 = 150");
         assertEquals(15,  r.blackjackPayout(10));
-        assertEquals(7,   r.blackjackPayout(5),  "floor(5*3/2) = 7");
-        assertEquals(1,   r.blackjackPayout(1),  "floor(1*3/2) = 1 (a natural must never pay 0)");
+        // Halves round the player's way, as a casino would pay them.
+        assertEquals(8,   r.blackjackPayout(5),  "ceil(5*3/2) = 8, not 7");
+        assertEquals(2,   r.blackjackPayout(1),  "ceil(1*3/2) = 2 (a natural must never pay 0)");
     }
 
     @Test void insurancePaysTwoToOne() {

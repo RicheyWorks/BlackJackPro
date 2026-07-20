@@ -19,12 +19,32 @@ import java.nio.file.Paths;
  *   <li>macOS:   {@code ~/Library/Application Support/BlackJackPro}</li>
  *   <li>Linux:   {@code $XDG_DATA_HOME/BlackJackPro} or {@code ~/.local/share/BlackJackPro}</li>
  * </ul>
+ *
+ * <p><b>Android:</b> the detection above does not apply — Android reports
+ * {@code os.name=Linux} with a {@code user.home} that is not writable, so the
+ * Linux branch would resolve somewhere the app cannot write. Android callers
+ * must pass their own directory to {@link #dataDir(String)} (the activity's
+ * {@code getFilesDir()}), which is already app-private and needs no permission.
  */
 public final class AppPaths {
 
     private static final String APP_FOLDER = "BlackJackPro";
 
     private AppPaths() {}
+
+    /**
+     * Data directory for a platform that knows where its own storage lives.
+     *
+     * @param baseOverride an absolute directory to use as-is; when null or blank
+     *                     this falls back to {@link #dataDir()} host detection.
+     *                     Passed straight through rather than having
+     *                     {@code BlackJackPro} appended — a platform that hands
+     *                     us a directory has already scoped it to this app.
+     */
+    public static Path dataDir(String baseOverride) {
+        if (baseOverride == null || baseOverride.isBlank()) return dataDir();
+        return Paths.get(baseOverride);
+    }
 
     /** The per-user data directory. Not created here — callers create on write. */
     public static Path dataDir() {

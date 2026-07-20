@@ -1,8 +1,7 @@
-package com.richeyworks.blackjack.plugins.builtin;
+package com.richeyworks.blackjack.sidebet;
 
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Rank;
-import com.richeyworks.blackjack.plugin.SideBet;
 
 import java.util.List;
 

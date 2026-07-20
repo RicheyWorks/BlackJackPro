@@ -34,7 +34,7 @@ public final class AchievementToast {
         panel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(0xC9A227), 2, true),
                 BorderFactory.createEmptyBorder(10, 14, 10, 14)));
-        JLabel medal = new JLabel("★");
+        JLabel medal = new JLabel("\u2605");   // BLACK STAR, escaped so no charset can eat it
         medal.setForeground(new Color(0xF1C40F));
         medal.setFont(medal.getFont().deriveFont(Font.BOLD, 28f));
         JPanel text = new JPanel(new GridLayout(0, 1));

@@ -1,4 +1,4 @@
-package com.richeyworks.blackjack.plugins.builtin;
+package com.richeyworks.blackjack.strategy;
 
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Rank;
@@ -7,32 +7,32 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class HiLoCounterAiTest {
+class HiLoCounterTest {
 
     private static Card c(Rank r) { return new Card(r, Suit.SPADES); }
 
     @Test void lowCardsIncrementCount() {
-        HiLoCounterAi ai = new HiLoCounterAi();
+        HiLoCounter ai = new HiLoCounter();
         for (Rank r : new Rank[]{Rank.TWO, Rank.THREE, Rank.FOUR, Rank.FIVE, Rank.SIX}) ai.observe(c(r));
         assertEquals(5, ai.runningCount());
         assertEquals(5, ai.cardsSeen());
     }
 
     @Test void highCardsDecrementCount() {
-        HiLoCounterAi ai = new HiLoCounterAi();
+        HiLoCounter ai = new HiLoCounter();
         for (Rank r : new Rank[]{Rank.TEN, Rank.JACK, Rank.QUEEN, Rank.KING, Rank.ACE}) ai.observe(c(r));
         assertEquals(-5, ai.runningCount());
     }
 
     @Test void neutralCardsDoNotChangeCount() {
-        HiLoCounterAi ai = new HiLoCounterAi();
+        HiLoCounter ai = new HiLoCounter();
         for (Rank r : new Rank[]{Rank.SEVEN, Rank.EIGHT, Rank.NINE}) ai.observe(c(r));
         assertEquals(0, ai.runningCount());
         assertEquals(3, ai.cardsSeen());
     }
 
     @Test void trueCountDividesByDecksRemaining() {
-        HiLoCounterAi ai = new HiLoCounterAi();
+        HiLoCounter ai = new HiLoCounter();
         for (int i = 0; i < 6; i++) ai.observe(c(Rank.FIVE));   // running +6
         assertEquals(6, ai.runningCount());
         assertEquals(3.0, ai.trueCount(2), 1e-9);               // 6 / 2 decks
@@ -40,7 +40,7 @@ class HiLoCounterAiTest {
     }
 
     @Test void resetClearsCount() {
-        HiLoCounterAi ai = new HiLoCounterAi();
+        HiLoCounter ai = new HiLoCounter();
         ai.observe(c(Rank.FIVE));
         ai.observe(c(Rank.KING));
         ai.resetCount();

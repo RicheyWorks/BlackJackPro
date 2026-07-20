@@ -37,4 +37,34 @@ allprojects {
         mavenCentral()
         google()
     }
+
+    /*
+     * Compile every module as UTF-8, explicitly.
+     *
+     * javac falls back to the JVM's default charset when -encoding is absent.
+     * The sources carry literal non-ASCII characters in player-facing strings
+     * (em dashes, middle dots, stars, arrows), so under a non-UTF-8 default the
+     * mangled bytes are baked into the class files as string constants and the
+     * game ships visibly broken text. Verified: the same source compiles to
+     * "Hand 1 — your move · $5" under UTF-8 and to mojibake under a
+     * windows-1252 default.
+     *
+     * JDK 18+ defaults to UTF-8 (JEP 400) so this usually works by luck today,
+     * but it is one -Dfile.encoding away from breaking, and the failure is
+     * silent at build time — it only shows up on screen, on someone else's
+     * machine.
+     */
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
+
+    tasks.withType<Javadoc>().configureEach {
+        options.encoding = "UTF-8"
+    }
+
+    tasks.withType<Test>().configureEach {
+        // Test JVMs need it too, or an assertion on a non-ASCII string can fail
+        // only when the report is written.
+        systemProperty("file.encoding", "UTF-8")
+    }
 }

@@ -20,14 +20,58 @@ public final class BlackjackRules {
     public int insurancePayoutNum = 2;
     public int insurancePayoutDen = 1;
 
-    /** Compute blackjack winnings (excluding stake return) for a given bet.
-     *  Floors to whole chips per denominator first, so a 3:2 payout never
-     *  awards a fractional chip (e.g. a bet of 1 pays 0, a bet of 100 pays 150). */
+    /*
+     * Rounding policy: the game pays in whole dollars, so any ratio that lands
+     * on a fraction has to round somewhere. Every rounding here goes the
+     * player's way — money owed to the player rounds up, money taken from the
+     * player rounds down.
+     *
+     * This follows the house: casinos vary, but where a half-dollar cannot be
+     * paid, rounding up is the normal outcome. It also avoids a systematic edge
+     * the player never agreed to. Flooring the 3:2 payout shorted every
+     * odd-dollar bet by exactly $0.50 — and with 1/5/25/100/500 chips that is
+     * the common case, not an edge case: a single $5 chip, a single $25 chip,
+     * or any odd number of $5 chips all landed on it.
+     */
+
+    /**
+     * Blackjack winnings for a bet, excluding the returned stake.
+     * Rounds up: a $25 natural pays 38, not 37 (true value 37.50).
+     */
     public int blackjackPayout(int bet) {
-        return bet * blackjackPayoutNum / blackjackPayoutDen;
+        return payUp(bet, blackjackPayoutNum, blackjackPayoutDen);
     }
 
+    /** Insurance winnings, excluding the returned premium. 2:1 is always exact. */
     public int insurancePayout(int insuranceBet) {
-        return insuranceBet * insurancePayoutNum / insurancePayoutDen;
+        return payUp(insuranceBet, insurancePayoutNum, insurancePayoutDen);
+    }
+
+    /**
+     * The insurance premium for a main bet — half the stake, rounded <em>down</em>.
+     * This is money the player hands over, so the rounding favours them here by
+     * charging less. Centralised because the engine both offers and collects it.
+     */
+    public int insurancePremium(int bet) {
+        return bet / 2;
+    }
+
+    /**
+     * What late surrender returns — half the stake, rounded <em>up</em>.
+     * A $25 surrender returns 13, not 12 (true value 12.50): this is money
+     * coming back to the player, so it rounds their way like the payouts.
+     */
+    public int surrenderRefund(int bet) {
+        return payUp(bet, 1, 2);
+    }
+
+    /**
+     * {@code ceil(amount * num / den)} computed in {@code long} so a large bet
+     * cannot overflow the multiplication before the division brings it back
+     * into range.
+     */
+    private static int payUp(int amount, int num, int den) {
+        if (den == 0) return 0;
+        return (int) (((long) amount * num + den - 1) / den);
     }
 }

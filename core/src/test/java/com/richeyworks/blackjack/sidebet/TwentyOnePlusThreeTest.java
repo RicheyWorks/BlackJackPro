@@ -1,9 +1,8 @@
-package com.richeyworks.blackjack.plugins;
+package com.richeyworks.blackjack.sidebet;
 
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Rank;
 import com.richeyworks.blackjack.engine.Suit;
-import com.richeyworks.blackjack.plugins.builtin.TwentyOnePlusThree;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

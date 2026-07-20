@@ -20,6 +20,7 @@ import java.awt.geom.RoundRectangle2D;
  */
 public final class ClassicTheme implements TableTheme {
 
+    @Override public String id()          { return "classic"; }
     @Override public String displayName() { return "Classic Felt"; }
     @Override public Color  feltTop()     { return new Color(0x14513B); }
     @Override public Color  feltBottom()  { return new Color(0x062418); }
@@ -75,7 +76,10 @@ public final class ClassicTheme implements TableTheme {
         Stroke old = g.getStroke();
         g.setStroke(new BasicStroke(1.2f));
         Shape clip = g.getClip();
-        g.setClip(r);
+        // clip() intersects with whatever region is already active; setClip()
+        // would replace it and let the hatching escape Swing's damage rectangle
+        // during a partial repaint.
+        g.clip(r);
         for (int i = -cardHeight(); i < cardWidth() + cardHeight(); i += 8) {
             g.drawLine(x + i, y, x + i - cardHeight(), y + cardHeight());
             g.drawLine(x + i, y + cardHeight(), x + i - cardHeight(), y);

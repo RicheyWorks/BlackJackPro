@@ -32,7 +32,22 @@ public final class InMemoryWallet implements Wallet {
 
     private final List<LedgerEntry> ledger = new ArrayList<>();
     private final Map<String, String> txByIdempotencyKey = new HashMap<>();
+    /**
+     * key -> fingerprint of the legs first posted under it, so a replay can be
+     * checked rather than assumed. A silent no-op for a posting that differs
+     * from the original tells the caller "already applied" about a transaction
+     * that was never applied at all.
+     */
+    private final Map<String, String> legsByIdempotencyKey = new HashMap<>();
     private final AtomicLong seq = new AtomicLong();
+
+    /** Account, asset and amount of every leg, in a stable order. */
+    private static String fingerprint(List<LedgerEntry> legs) {
+        List<String> parts = new ArrayList<>(legs.size());
+        for (LedgerEntry e : legs) parts.add(e.account() + "|" + e.asset() + "|" + e.amountMinor());
+        parts.sort(null);
+        return String.join(",", parts);
+    }
 
     public static String availableAccount(String playerId) { return Wallet.available(playerId); }
     public static String escrowAccount(String playerId)    { return Wallet.escrow(playerId); }
@@ -75,6 +90,13 @@ public final class InMemoryWallet implements Wallet {
 
         String key = legs.get(0).idempotencyKey();
         String tx  = legs.get(0).transactionId();
+        if (key == null || key.isBlank()) {
+            // Without a key there is no replay protection at all, and a retried
+            // network call posts the money twice. Nothing in this codebase
+            // needs an unkeyed posting, so require one rather than silently
+            // offering a mode that is never safe.
+            throw new IllegalArgumentException("a posting must carry an idempotency key");
+        }
         for (LedgerEntry e : legs) {
             if (!Objects.equals(e.idempotencyKey(), key)) {
                 throw new IllegalArgumentException("all legs of a posting must share one idempotency key");
@@ -83,7 +105,16 @@ public final class InMemoryWallet implements Wallet {
                 throw new IllegalArgumentException("all legs of a posting must share one transaction id");
             }
         }
-        if (key != null && txByIdempotencyKey.containsKey(key)) return;   // idempotent no-op
+        String fingerprint = fingerprint(legs);
+        String seen = legsByIdempotencyKey.get(key);
+        if (seen != null) {
+            if (!seen.equals(fingerprint)) {
+                throw new IllegalArgumentException("idempotency key " + key
+                        + " was already used for a different posting; replaying it would"
+                        + " report success for a transaction that was never applied");
+            }
+            return;                                                   // genuine replay
+        }
 
         Map<Asset, Long> perAsset = new EnumMap<>(Asset.class);
         for (LedgerEntry e : legs) perAsset.merge(e.asset(), e.amountMinor(), Long::sum);
@@ -94,7 +125,8 @@ public final class InMemoryWallet implements Wallet {
         }
 
         ledger.addAll(legs);
-        if (key != null) txByIdempotencyKey.put(key, tx);
+        txByIdempotencyKey.put(key, tx);
+        legsByIdempotencyKey.put(key, fingerprint);
     }
 
     /** Read-only snapshot of the ledger for audit / reconciliation. */
