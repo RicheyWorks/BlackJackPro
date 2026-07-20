@@ -17,6 +17,9 @@ import com.richeyworks.blackjack.plugin.TableTheme;
 import com.richeyworks.blackjack.plugins.builtin.HiLoCounterAi;
 import com.richeyworks.blackjack.settings.GameSettings;
 import com.richeyworks.blackjack.steam.SteamBridge;
+import com.richeyworks.blackjack.table.Personas;
+import com.richeyworks.blackjack.table.TableChatter;
+import com.richeyworks.blackjack.table.TableEvent;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -82,6 +85,14 @@ public final class BlackJackProApp extends JFrame {
     /** Single reusable timer behind {@link #flash(String)}. */
     private Timer flashTimer;
 
+    /** The characters at the table. They talk; they never play a hand. */
+    private final TableChatter chatter =
+            new TableChatter(Personas.defaults(), new java.util.Random());
+    /** Repaints while a bubble is fading, since nothing else drives a frame. */
+    private Timer chatterTimer;
+    /** Consecutive losing rounds, the mirror of winStreak. */
+    private int lossStreak;
+
     private final JLabel statusBar = new JLabel(" ");
     private final JLabel bankLabel = new JLabel();
     private final JLabel betLabel  = new JLabel();
@@ -146,6 +157,14 @@ public final class BlackJackProApp extends JFrame {
         });
 
         table = new TablePanel(engine, theme);
+        table.setChatter(chatter);
+        // Bubbles fade over a few seconds and the game is otherwise event-driven,
+        // so without a repaint tick they would freeze mid-fade until the next
+        // click. Cheap: it only runs while something is actually on screen.
+        chatterTimer = new Timer(80, e -> {
+            if (!chatter.visibleAt(System.currentTimeMillis()).isEmpty()) table.repaint();
+            else ((Timer) e.getSource()).stop();
+        });
         add(table, BorderLayout.CENTER);
         add(buildControlBar(), BorderLayout.SOUTH);
 
@@ -271,8 +290,10 @@ public final class BlackJackProApp extends JFrame {
         bDeal.addActionListener(e -> dealRound());
         bHit.addActionListener(e -> safe(engine::hit, null));
         bStand.addActionListener(e -> safe(engine::stand, null));
-        bDouble.addActionListener(e -> safe(engine::doubleDown, "Cannot double."));
-        bSplit.addActionListener(e -> safe(engine::split, "Cannot split."));
+        bDouble.addActionListener(e -> safe(() -> { engine.doubleDown(); say(TableEvent.PLAYER_DOUBLE); },
+                "Cannot double."));
+        bSplit.addActionListener(e -> safe(() -> { engine.split(); say(TableEvent.PLAYER_SPLIT); },
+                "Cannot split."));
         bSurrender.addActionListener(e -> safe(engine::surrender, null));
         bHint.addActionListener(e -> showHint());
         bIns.addActionListener(e -> takeInsurance(true));
@@ -500,6 +521,7 @@ public final class BlackJackProApp extends JFrame {
             resolveSideBet();
             sfx.cardSnap();
             postAction();
+            if (engine.phase() == Phase.INSURANCE) say(TableEvent.INSURANCE_OFFERED);
         } catch (RuntimeException ex) {
             flash("Place a bet first.");
         }
@@ -587,6 +609,45 @@ public final class BlackJackProApp extends JFrame {
         if (playerWon)       winStreak++;
         else if (playerLost) winStreak = 0;
         achievements.setProgress("survived_bust_streak", winStreak);
+
+        if (playerWon)       lossStreak = 0;
+        else if (playerLost) lossStreak++;
+
+        say(mostNotable(outcomes, playerWon, playerLost));
+    }
+
+    /**
+     * Pick the single most remark-worthy thing about a finished round.
+     *
+     * <p>One event, not several: the chatter enforces a gap between remarks, so
+     * offering it five things would just mean four get silently dropped in
+     * whatever order the code happened to check them. Choosing deliberately
+     * means the table comments on the blackjack rather than the push that
+     * happened on the other split hand.
+     */
+    private TableEvent mostNotable(List<Outcome> outcomes, boolean playerWon, boolean playerLost) {
+        if (outcomes.contains(Outcome.BLACKJACK))     return TableEvent.PLAYER_BLACKJACK;
+        if (engine.dealer().isBust() && playerWon)    return TableEvent.DEALER_BUST;
+        if (engine.dealer().isBlackjack())            return TableEvent.DEALER_BLACKJACK;
+        if (outcomes.contains(Outcome.BUST))          return TableEvent.PLAYER_BUST;
+        if (outcomes.contains(Outcome.SURRENDER))     return TableEvent.PLAYER_SURRENDER;
+
+        // Streaks outrank a plain win or loss — they're the more interesting
+        // thing to notice, and they're what a real table would comment on.
+        if (winStreak  >= 3) return TableEvent.HOT_STREAK;
+        if (lossStreak >= 3) return TableEvent.COLD_STREAK;
+
+        if (engine.bankroll() > 0 && engine.bankroll() <= 100) return TableEvent.LOW_CHIPS;
+        if (playerWon)  return TableEvent.PLAYER_WIN;
+        if (playerLost) return TableEvent.PLAYER_LOSS;
+        return TableEvent.PUSH;
+    }
+
+    /** Offer an event to the table and repaint if anybody took it up. */
+    private void say(TableEvent event) {
+        if (chatter.react(event, System.currentTimeMillis()).isEmpty()) return;
+        table.repaint();
+        if (chatterTimer != null && !chatterTimer.isRunning()) chatterTimer.start();
     }
 
     /**
@@ -599,12 +660,15 @@ public final class BlackJackProApp extends JFrame {
      * back up) resets both the count and that cursor.
      */
     private void observeNewCards() {
-        if (counter == null) return;
+        // The reshuffle check has to run whether or not a counter is loaded --
+        // it's also what tells the table a fresh shoe went in.
         if (engine.shoe().remaining() > lastShoeRemaining) {
-            counter.resetCount();
+            if (counter != null) counter.resetCount();
             observedCards = 0;
+            say(TableEvent.SHUFFLE);
         }
         lastShoeRemaining = engine.shoe().remaining();
+        if (counter == null) return;
 
         int seen = 0;
         for (var hh : engine.hands()) {
@@ -721,7 +785,9 @@ public final class BlackJackProApp extends JFrame {
         engine.stats().reset();
         processedHands = 0;
         winStreak      = 0;
+        lossStreak     = 0;
         lastResult     = "";
+        chatter.clear();
         sideBets.clear();
         sideMsg = "";
         engine.shoe().reshuffle();

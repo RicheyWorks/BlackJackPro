@@ -4,6 +4,9 @@ import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Hand;
 import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.plugin.TableTheme;
+import com.richeyworks.blackjack.table.Personas;
+import com.richeyworks.blackjack.table.Remark;
+import com.richeyworks.blackjack.table.TableChatter;
 
 import javax.swing.JPanel;
 import java.awt.BasicStroke;
@@ -30,6 +33,8 @@ public final class TablePanel extends JPanel {
 
     private final Engine engine;
     private TableTheme   theme;
+    /** Optional; null leaves the table silent. */
+    private TableChatter chatter;
 
     // The felt gradient depends only on the theme and the panel height; rebuilding
     // it every repaint is pure churn, so cache it and invalidate on either change.
@@ -47,6 +52,12 @@ public final class TablePanel extends JPanel {
     public void setTheme(TableTheme theme) {
         this.theme = theme;
         setBackground(theme.feltBottom());
+        repaint();
+    }
+
+    /** Seat the characters. Passing null empties the table. */
+    public void setChatter(TableChatter chatter) {
+        this.chatter = chatter;
         repaint();
     }
 
@@ -125,6 +136,32 @@ public final class TablePanel extends JPanel {
 
         if (engine.phase() == Phase.BETTING && engine.pendingBet() > 0) {
             paintBetStack(g2, w / 2, h / 2 + 20, engine.pendingBet());
+        }
+
+        paintChatter(g2, w, h);
+    }
+
+    /**
+     * Draw whatever the table is saying.
+     *
+     * <p>Seats are pinned to the edges, clear of the dealer at top-centre and
+     * the player's hands at bottom-centre, so a bubble never covers a card.
+     */
+    private void paintChatter(Graphics2D g2, int w, int h) {
+        if (chatter == null) return;
+        long now = System.currentTimeMillis();
+        for (Remark r : chatter.visibleAt(now)) {
+            int seat = r.speaker().seat();
+            boolean left = seat != Personas.SEAT_RIGHT;
+            int x = left ? 46 : w - 46;
+            int y = switch (seat) {
+                case Personas.SEAT_LEFT  -> (int) (h * 0.52);
+                case Personas.SEAT_RIGHT -> (int) (h * 0.52);
+                default                  -> (int) (h * 0.30);   // far seat, higher up
+            };
+            SpeechBubble.paint(g2, r, x, y,
+                    left ? SpeechBubble.Side.LEFT : SpeechBubble.Side.RIGHT,
+                    r.opacityAt(now));
         }
     }
 

@@ -23,6 +23,10 @@ import com.richeyworks.blackjack.engine.Outcome;
 import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.engine.Rank;
 import com.richeyworks.blackjack.engine.SessionStats;
+import com.richeyworks.blackjack.table.Personas;
+import com.richeyworks.blackjack.table.Remark;
+import com.richeyworks.blackjack.table.TableChatter;
+import com.richeyworks.blackjack.table.TableEvent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -51,6 +55,13 @@ public final class TableScreen extends InputAdapter implements Screen {
     private int winStreak;
     /** Built on first use and reused, so returning keeps the hand in progress. */
     private MenuScreen menu;
+
+    /** The characters at the table. They talk; they never play a hand. */
+    private final TableChatter chatter =
+            new TableChatter(Personas.defaults(), new java.util.Random());
+    /** Consecutive losing rounds, the mirror of winStreak. */
+    private int lossStreak;
+    private int lastShoeSeen;
 
     private final OrthographicCamera camera = new OrthographicCamera();
     private final Viewport           viewport = new FitViewport(WORLD_W, WORLD_H, camera);
@@ -161,10 +172,37 @@ public final class TableScreen extends InputAdapter implements Screen {
      * insurance prompt never presents an observable SETTLE phase to watch for.
      */
     private void postAction() {
+        if (engine.shoe().remaining() > lastShoeSeen) say(TableEvent.SHUFFLE);
+        lastShoeSeen = engine.shoe().remaining();
+        if (engine.phase() == Phase.INSURANCE) say(TableEvent.INSURANCE_OFFERED);
         if (engine.phase() == Phase.BETTING && engine.stats().hands > processedHands) {
             processedHands = engine.stats().hands;
             onRoundComplete();
         }
+    }
+
+    /** Offer one event to the table; the chatter decides whether anyone speaks. */
+    private void say(TableEvent event) {
+        chatter.react(event, System.currentTimeMillis());
+    }
+
+    /**
+     * The single most remark-worthy thing about a finished round. One event
+     * rather than several — the chatter paces remarks, so offering it five
+     * things just means four get dropped in whatever order the code checked.
+     */
+    private TableEvent mostNotable(List<Outcome> outcomes, boolean won, boolean lost) {
+        if (outcomes.contains(Outcome.BLACKJACK))  return TableEvent.PLAYER_BLACKJACK;
+        if (engine.dealer().isBust() && won)       return TableEvent.DEALER_BUST;
+        if (engine.dealer().isBlackjack())         return TableEvent.DEALER_BLACKJACK;
+        if (outcomes.contains(Outcome.BUST))       return TableEvent.PLAYER_BUST;
+        if (outcomes.contains(Outcome.SURRENDER))  return TableEvent.PLAYER_SURRENDER;
+        if (winStreak  >= 3)                       return TableEvent.HOT_STREAK;
+        if (lossStreak >= 3)                       return TableEvent.COLD_STREAK;
+        if (engine.bankroll() > 0 && engine.bankroll() <= 100) return TableEvent.LOW_CHIPS;
+        if (won)  return TableEvent.PLAYER_WIN;
+        if (lost) return TableEvent.PLAYER_LOSS;
+        return TableEvent.PUSH;
     }
 
     private void onRoundComplete() {
@@ -189,6 +227,10 @@ public final class TableScreen extends InputAdapter implements Screen {
         statusText = sb.toString().trim();
 
         if (won) game.platform().hapticTick();
+
+        if (won)          lossStreak = 0;
+        else if (!pushed) lossStreak++;
+        say(mostNotable(outcomes, won, !won && !pushed));
 
         AchievementService a = session.achievements();
         SessionStats       s = engine.stats();
@@ -240,6 +282,54 @@ public final class TableScreen extends InputAdapter implements Screen {
         drawHands();
         drawButtons();
         drawHud();
+        drawChatter();
+    }
+
+    /**
+     * Draw whatever the table is saying.
+     *
+     * <p>Bubbles sit against the left and right edges at mid height, clear of
+     * the dealer along the top and the action bar along the bottom. Drawn last
+     * so they sit above the cards rather than under them.
+     */
+    private void drawChatter() {
+        long now = System.currentTimeMillis();
+        List<Remark> remarks = chatter.visibleAt(now);
+        if (remarks.isEmpty()) return;
+
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        for (Remark r : remarks) {
+            int seat = r.speaker().seat();
+            boolean left = seat != Personas.SEAT_RIGHT;
+            float bw = 300f, bh = 76f;
+            float bx = left ? 24f : WORLD_W - bw - 24f;
+            float by = switch (seat) {
+                case Personas.SEAT_LEFT  -> WORLD_H * 0.46f;
+                case Personas.SEAT_RIGHT -> WORLD_H * 0.46f;
+                default                  -> WORLD_H * 0.62f;
+            };
+            float a = r.opacityAt(now);
+
+            shapes.begin(ShapeRenderer.ShapeType.Filled);
+            shapes.setColor(0.96f, 0.94f, 0.87f, a);
+            shapes.rect(bx, by, bw, bh);
+            shapes.end();
+
+            shapes.begin(ShapeRenderer.ShapeType.Line);
+            shapes.setColor(0.23f, 0.18f, 0.08f, a);
+            shapes.rect(bx, by, bw, bh);
+            shapes.end();
+
+            batch.begin();
+            font.setColor(0.42f, 0.35f, 0.18f, a);
+            font.draw(batch, r.speaker().name(), bx + 12, by + bh - 10);
+            font.setColor(0.12f, 0.10f, 0.07f, a);
+            // Let libGDX wrap inside the bubble rather than measuring by hand.
+            font.draw(batch, r.text(), bx + 12, by + bh - 30, bw - 24, -1, true);
+            batch.end();
+        }
+        // Leave the colour clean for the next frame's opaque passes.
+        font.setColor(BlackJackGame.TEXT);
     }
 
     private void drawTable() {
