@@ -10,6 +10,11 @@ The architecture is right, and notably better than most first attempts at this: 
 
 But **`DefaultGameRoundService` has a money-losing bug reachable by an ordinary network retry** (PL-1), and it is invisible to the ledger's own zero-sum invariant. The module is explicitly not operable without licensing and counsel, so nothing here is live — which is exactly why it is cheap to fix now.
 
+> **Status, 2026-07-20.** All ten code findings (PL-1, PL-2, PL-3, PL-7 … PL-13) are
+> fixed and covered by tests; the platform suite is 41 tests, and 223 pass across
+> `core` + `platform`. PL-4, PL-5 and PL-6 stay open on purpose — they are decisions
+> for counsel and product rather than code defects.
+
 One thing worth stating plainly: this review covers **code correctness only**. Whether the licensed-state list, the withdrawal rules, or the crypto handling actually satisfy any regulator is a question for gaming counsel, not for me. Where a finding touches that, I have described the mechanism and left the legal conclusion open.
 
 ## Findings
@@ -26,14 +31,14 @@ One thing worth stating plainly: this review covers **code correctness only**. W
 | PL-8 | Low | `RoundRng`'s guarantee rests on an unenforced assumption | ✅ Fixed |
 | PL-9 | Low | `post()` accepts a null idempotency key and silently forgoes replay protection | ✅ Fixed |
 | PL-10 | Low | Idempotent replay is not checked against the original request | ✅ Fixed |
-| PL-11 | Info | Balance lookups are O(ledger) | Open |
-| PL-12 | Info | Ledger sums use unchecked `long` arithmetic | Open |
-| PL-13 | Info | Audit-sink failure has undefined behaviour | Open |
+| PL-11 | Info | Balance lookups are O(ledger) | ✅ Fixed |
+| PL-12 | Info | Ledger sums use unchecked `long` arithmetic | ✅ Fixed |
+| PL-13 | Info | Audit-sink failure has undefined behaviour | ✅ Fixed |
 
-**Three of the four Mediums and the High are fixed; the three left open are policy
-questions, not code defects** — what withdrawals a self-excluded player may make,
-whether crypto is permitted, and whether to ship provably-fair verification are
-decisions for counsel and product, and this review deliberately does not make them.
+**Every code defect in this review is now fixed. The three left open are policy
+questions, not code** — what withdrawals a self-excluded player may make, whether
+crypto is permitted, and whether to ship provably-fair verification are decisions for
+counsel and product, and this review deliberately does not make them.
 
 ### How the fixes were verified
 
@@ -228,9 +233,70 @@ But it is an assumption about two implementations, neither of which is obliged t
 
 **PL-11 · Info · Balance lookups are O(ledger).** `balanceOf` scans every entry ever posted, and `hold` calls it on every wager. Correct and appropriate for the in-memory reference, but the production mapping needs a materialised balance or a snapshot, and the interface should probably say so.
 
+> **✅ Fixed.** Balances are now maintained incrementally in the same synchronized block
+> that appends the legs which moved them, so a read is a map lookup. The ledger stays
+> authoritative and the map is explicitly an index over it, not a second copy — nothing
+> writes to it except `post`, and a new `reconcile()` re-derives every balance from the
+> ledger and throws on the first divergence. `Wallet.availableMinor` now states the
+> contract that makes this legitimate: implementations may serve a materialised figure
+> **provided it is updated in the same atomic unit as the posting**. A balance updated
+> separately from the ledger is a second source of truth, not a faster read of the first.
+>
+> Measured on the pre-fix code, a read cost 2,835 ns at 2,000 entries, 38,121 ns at
+> 20,000, and 291,946 ns at 100,000 — linear, as advertised. After the fix it is flat at
+> ~50 ns. Covered by `materialisedBalancesAgreeWithTheLedgerSum`, which compares against
+> an independent naive re-derivation.
+>
+> Recorded honestly: **this test passes against `HEAD` too**, because PL-11 was never a
+> wrong-answer bug — the old code returned the same numbers, slowly. The test is a guard
+> on the new index, not a caught defect. The linear-to-flat measurement above is the
+> actual evidence the fix did anything.
+
 **PL-12 · Info · Ledger sums use unchecked `long` arithmetic.** `sum += e.amountMinor()`. Cents will never overflow, but `Asset` includes wei-scaled tokens where the headroom is far smaller. `Math.addExact` would turn a silent wrap into an exception.
 
+> **✅ Fixed.** Every accumulation — the zero-sum check, the balance update, and
+> `reconcile()`'s re-derivation — goes through `Math.addExact` with an account/asset in
+> the message. Against the old code the probe is unambiguous: one posting past
+> `Long.MAX_VALUE` returned normally and left the account holding
+> **−9,223,372,036,854,775,808**. Not a rounding artifact — a maximally negative balance,
+> indistinguishable from a legitimate debt, and no exception anywhere.
+>
+> The fix also had to be **all-or-nothing**, which the first draft was not. The overflow
+> fires on the second leg, and the old `post` had already appended the first: the probe
+> shows the ledger going from 2 entries to 4 on a posting that failed. A half-applied
+> transaction breaks zero-sum permanently, which is worse than the overflow that caused
+> it. `post` now computes every resulting balance before mutating anything, so a rejected
+> posting appends nothing and — deliberately — does not burn its idempotency key either,
+> or the retry that would have succeeded gets silently swallowed as a replay.
+>
+> Pinned by `aBalanceThatWouldOverflowThrowsRatherThanWrappingNegative` and
+> `anOverflowingPostingLeavesNoPartialState`, both confirmed to fail against `HEAD`.
+
 **PL-13 · Info · Audit-sink failure has undefined behaviour.** `authorize` records then returns; if the sink throws, the exception propagates and no `Decision` is produced. Whether that ends up fail-closed depends entirely on the caller. For a system where "every decision is audited" is a regulatory claim, an unavailable audit log should produce an explicit denial. Relatedly, `audit.record(action, decision)` is called with a null `action` when the action was null, which would NPE most implementations at the exact moment something odd is happening.
+
+> **✅ Fixed.** A sink failure now yields `Decision.deny(AUDIT_UNAVAILABLE)` — a new
+> reason whose javadoc says plainly that it is not a judgement about the player. The
+> gate cannot demonstrate the action was recorded, and a fail-closed gate does not
+> authorize what it cannot evidence.
+>
+> The trade-off is one-directional and stated as a test rather than left as a comment:
+> an audit outage **stops play**; it never permits play that nobody can evidence.
+> `anUnavailableAuditSinkNeverTurnsADenialIntoAnAllow` walks a licensed wager, a
+> withdrawal, and a null action through a dead sink and asserts all three are denied.
+>
+> One consequence worth naming rather than hiding: when the underlying decision was
+> *already* a denial, the specific reason is replaced by `AUDIT_UNAVAILABLE`. That loses
+> detail for player messaging, and it is still the right answer — we cannot show the real
+> reason was recorded, so it is the only claim the gate can stand behind. Both outcomes
+> are denials, so no money moves either way.
+>
+> The null-`action` case is handled by contract rather than by a guard. `AuditLog` now
+> documents that `action` may be null, that this is exactly what a malformed request
+> looks like and therefore the case most worth logging, and that implementations must
+> not throw on it. A sink that throws anyway is no longer an NPE escaping the gate — the
+> probe confirms `HEAD` propagates `NullPointerException` out of `authorize` where the
+> fixed code returns a denial. Note the catch is `RuntimeException`, not `Throwable`:
+> an `OutOfMemoryError` is not a compliance decision and still propagates.
 
 ## What's solid
 
@@ -248,7 +314,11 @@ But it is an assumption about two implementations, neither of which is obliged t
 3. **PL-4, PL-5** — compliance behaviour that should be a deliberate decision rather than a side effect. Both want counsel's input, not just a code change. **Still open, deliberately.**
 4. **PL-6** — either deliver the provably-fair flow or stop describing it as one. **Still open** — a product decision. PL-8's fix means the plumbing would now actually hold up if you chose to deliver it.
 5. ~~**PL-7 through PL-10** — small, and each removes a way for two pieces of money code to disagree.~~ ✅
-6. **PL-11 through PL-13** — revisit when the production storage mapping is written.
+6. ~~**PL-11 through PL-13** — revisit when the production storage mapping is written.~~ ✅
+   Done ahead of that mapping, because two of the three turned out to be load-bearing
+   for it: `Wallet` now *specifies* what a materialised balance is allowed to be, and
+   `post` is all-or-nothing under arithmetic failure. Both are cheaper to state now than
+   to retrofit onto a schema that already assumed otherwise.
 
 ## What this exercise actually taught
 
@@ -270,5 +340,19 @@ clustered where two components meet and each assumes the other is handling
 something — the round service assuming `hold()`'s idempotency was the whole story,
 `RoundRng` assuming `Shoe` would only ever call one method.
 
-*Findings PL-1, PL-2, PL-3, PL-7, PL-8, PL-9 and PL-10 have been fixed and are
-covered by tests. PL-4, PL-5 and PL-6 remain open by choice.*
+The PL-11/12/13 round added a third data point, and it points the other way from the
+first two. Those were found by *running* things; these were found by reading, and were
+filed as Info — "revisit later" — precisely because nothing was observably wrong. What
+running them later established was not that they were bugs, but **how far from harmless
+they were**: PL-12 does not degrade at the boundary, it hands back `Long.MIN_VALUE` and
+keeps going, and the old `post` had already committed half the transaction by the time
+it got there. The severity was right; "revisit later" was the part that was wrong.
+
+So the rule is not "soak everything." It is that the *reachability* of a defect and its
+*blast radius* are separate questions, and reading answers neither. PL-1 needed a
+simulator to show it was reachable. PL-12 needed a nine-line probe to show that when it
+is reached, it is not a rounding error.
+
+*Findings PL-1, PL-2, PL-3 and PL-7 through PL-13 have been fixed and are covered by
+tests. PL-4, PL-5 and PL-6 remain open by choice — they are questions for counsel and
+product, not defects.*

@@ -33,6 +33,12 @@ public interface ComplianceGate {
         CRYPTO_NOT_PERMITTED_IN_STATE,
         SELF_EXCLUDED,
         LIMIT_EXCEEDED,
-        SANCTIONS_OR_AML_HOLD
+        SANCTIONS_OR_AML_HOLD,
+        /**
+         * The decision could not be written to the audit log. Not a judgement about the
+         * player — it means the gate cannot demonstrate this action was recorded, and a
+         * fail-closed gate does not authorize what it cannot evidence.
+         */
+        AUDIT_UNAVAILABLE
     }
 }

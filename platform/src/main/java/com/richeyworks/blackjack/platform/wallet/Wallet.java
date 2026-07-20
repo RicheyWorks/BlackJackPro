@@ -11,7 +11,17 @@ import java.util.List;
  */
 public interface Wallet {
 
-    /** Derived available balance (ledger sum) for a player + asset, in minor units. */
+    /**
+     * Available balance for a player + asset, in minor units.
+     *
+     * <p>The ledger is the authority: implementations MUST return exactly what summing
+     * the account's entries would produce. They are free — and at production volume
+     * expected — to serve that from a materialised balance rather than scanning, since
+     * this is called on every wager and a scan is O(entries ever posted). The condition
+     * is that the figure is updated in the same atomic unit as the posting that moved
+     * it, and can be re-derived from the ledger on demand. A balance updated separately
+     * from the ledger is a second source of truth, not a faster read of the first one.
+     */
     long availableMinor(String playerId, Asset asset);
 
     /**
@@ -20,7 +30,14 @@ public interface Wallet {
      */
     String hold(String playerId, Asset asset, long amountMinor, String idempotencyKey);
 
-    /** Atomically append a balanced set of ledger legs. Must sum to zero per asset. */
+    /**
+     * Atomically append a balanced set of ledger legs. Must sum to zero per asset.
+     *
+     * <p>All-or-nothing: if any leg is rejected — unbalanced, replayed under a key that
+     * carried different legs, or arithmetically out of range — none of them are applied.
+     * Sums must be overflow-checked; a balance that silently wraps past
+     * {@link Long#MAX_VALUE} is indistinguishable from a legitimate negative one.
+     */
     void post(List<LedgerEntry> legs);
 
     /** Canonical account-name conventions shared across the platform. */
