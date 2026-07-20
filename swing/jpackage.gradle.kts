@@ -16,6 +16,14 @@ runtime {
         installerName = "BlackJackPro"
         appVersion    = (version as String).removeSuffix("-SNAPSHOT")
 
+        // The installed launcher gets its own JVM, so it does not inherit the
+        // args :swing:run uses. Without the encoding flag the packaged build can
+        // render the table text differently from the one that was tested.
+        jvmArgs = listOf(
+            "-Dfile.encoding=UTF-8",
+            "-Dsun.java2d.uiScale.enabled=true"
+        )
+
         val os = org.gradle.internal.os.OperatingSystem.current()
         if (os.isWindows) {
             installerType = "msi"

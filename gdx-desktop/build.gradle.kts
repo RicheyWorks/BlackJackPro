@@ -23,4 +23,8 @@ dependencies {
 
 application {
     mainClass.set("com.richeyworks.blackjack.gdx.desktop.DesktopLauncher")
+    // Same reason as :swing — the table draws non-ASCII text, and the preview
+    // is meant to show what the mobile build will look like, so it must not
+    // render differently just because the host locale differs.
+    applicationDefaultJvmArgs = listOf("-Dfile.encoding=UTF-8")
 }

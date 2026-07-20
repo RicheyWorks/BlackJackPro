@@ -367,7 +367,11 @@ public final class BlackJackProApp extends JFrame {
         StringBuilder sb = new StringBuilder("<html><body style='font-family:sans-serif;width:360px;'>");
         for (var a : achievements.all()) {
             sb.append("<p>");
-            sb.append(a.unlocked() ? "★ " : "☆ ");
+            // Escaped, not literal: these two glyphs are the only thing telling
+            // locked from unlocked. If a bad charset mangled both they would
+            // corrupt to the same bytes and the list would become unreadable —
+            // wrong, not merely ugly, unlike the decorative dashes elsewhere.
+            sb.append(a.unlocked() ? "\u2605 " : "\u2606 ");   // filled / hollow star
             sb.append("<b>").append(a.name()).append("</b><br/>");
             sb.append("<small>").append(a.description());
             sb.append("  (")
@@ -639,7 +643,7 @@ public final class BlackJackProApp extends JFrame {
 
     /**
      * Render the engine's per-hand outcomes plus the round's net as a status
-     * line, e.g. {@code "Hand 1: Win   Hand 2: Bust   −$10"}.
+     * line, e.g. {@code "Hand 1: Win   Hand 2: Bust   -$10"}.
      */
     private String summarize(List<Outcome> outcomes, int net) {
         if (outcomes.isEmpty()) return "";
@@ -651,7 +655,10 @@ public final class BlackJackProApp extends JFrame {
         }
         if (engine.dealer().isBlackjack()) sb.append("(dealer blackjack)   ");
         if (net > 0)      sb.append("+$").append(net);
-        else if (net < 0) sb.append("−$").append(-net);
+        // Plain ASCII hyphen, not U+2212 MINUS SIGN: this prefixes a money
+        // amount, so a charset problem here would garble the one character that
+        // says the player lost. Not worth the typography.
+        else if (net < 0) sb.append("-$").append(-net);
         else              sb.append("even");
         return sb.toString().trim();
     }
