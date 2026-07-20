@@ -1,7 +1,9 @@
 package com.richeyworks.blackjack.table;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,14 +47,21 @@ public final class TableChatter {
     /** Default time a bubble stays on screen. */
     public static final long DEFAULT_LINGER_MS           = 4_200;
 
+    /**
+     * How many recent lines a persona avoids repeating, per event. Capped
+     * below the bank size at pick time so there is always something to say.
+     */
+    private static final int RECENT_WINDOW = 5;
+
     private final List<Persona> personas;
     private final Random rng;
     private final long personaCooldown;
     private final long tableCooldown;
     private final long linger;
 
-    private final Map<String, Long>   lastSpokeAt = new HashMap<>();
-    private final Map<String, String> lastLine    = new HashMap<>();
+    private final Map<String, Long>          lastSpokeAt = new HashMap<>();
+    /** persona-id/event -> the last few lines used, to keep the bank feeling deep. */
+    private final Map<String, Deque<String>> history     = new HashMap<>();
     private final List<Remark>        active      = new ArrayList<>();
     private long lastAnyRemarkAt = Long.MIN_VALUE / 4;   // room to subtract without overflow
 
@@ -101,7 +110,6 @@ public final class TableChatter {
 
             Remark remark = new Remark(p, line, nowMillis, linger);
             lastSpokeAt.put(p.id(), nowMillis);
-            lastLine.put(p.id(), line);
             lastAnyRemarkAt = nowMillis;
             active.add(remark);
             return Optional.of(remark);
@@ -119,29 +127,45 @@ public final class TableChatter {
     public void clear() {
         active.clear();
         lastSpokeAt.clear();
-        lastLine.clear();
+        history.clear();
         lastAnyRemarkAt = Long.MIN_VALUE / 4;
     }
 
     /**
-     * Choose a line the persona did not just use. With only one line available
-     * repetition is unavoidable, and saying it again beats saying nothing.
+     * Choose a line the persona has not used recently.
+     *
+     * <p>Avoiding only the immediately previous line is not enough once a bank
+     * has ten options: uniform random picking makes a repeat likely within a
+     * handful of draws, and hearing the same sentence twice in a few minutes is
+     * exactly what makes scripted dialogue feel small. So each persona
+     * remembers its last few lines <em>per event</em> and picks outside that
+     * window, which turns the bank into something closer to a shuffled deck.
+     *
+     * <p>The window is capped below the bank size so there is always something
+     * left to say, and a persona with a single line repeats it rather than
+     * falling silent.
      */
     private String pickLine(Persona p, TableEvent event) {
         List<String> options = p.linesFor(event);
         if (options.isEmpty()) return null;
         if (options.size() == 1) return options.get(0);
 
-        String previous = lastLine.get(p.id());
-        for (int attempt = 0; attempt < 6; attempt++) {
-            String candidate = options.get(rng.nextInt(options.size()));
-            if (!candidate.equals(previous)) return candidate;
-        }
-        // Improbable, but a fallback beats a loop: take anything that differs.
+        String key = p.id() + "/" + event.name();
+        Deque<String> recent = history.computeIfAbsent(key, k -> new ArrayDeque<>());
+        int window = Math.min(RECENT_WINDOW, options.size() - 1);
+
+        List<String> fresh = new ArrayList<>(options.size());
         for (String candidate : options) {
-            if (!candidate.equals(previous)) return candidate;
+            if (!recent.contains(candidate)) fresh.add(candidate);
         }
-        return options.get(0);
+        // The window guarantees this is non-empty, but never trust that blindly.
+        String chosen = fresh.isEmpty()
+                ? options.get(rng.nextInt(options.size()))
+                : fresh.get(rng.nextInt(fresh.size()));
+
+        recent.addLast(chosen);
+        while (recent.size() > window) recent.removeFirst();
+        return chosen;
     }
 
     private void expire(long nowMillis) {
