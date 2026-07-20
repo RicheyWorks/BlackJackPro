@@ -19,13 +19,13 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
 }
 
-val gdxVersion = "1.12.1"
+val gdxVersion = "1.14.2"
 
 dependencies {
     api(project(":core"))
     api("com.badlogicgames.gdx:gdx:$gdxVersion")
 
-    testImplementation(platform("org.junit:junit-bom:5.10.3"))
+    testImplementation(platform("org.junit:junit-bom:6.1.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
