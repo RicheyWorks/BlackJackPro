@@ -75,24 +75,47 @@ public final class Engine {
         return phase == Phase.BETTING && amount > 0 && amount <= bankroll;
     }
     public boolean canDeal()        { return phase == Phase.BETTING && pendingBet > 0; }
+
+    /*
+     * Every check below tests the phase BEFORE touching active().
+     *
+     * That ordering is load-bearing, not style. advanceHand() leaves activeHand
+     * one past the end of the hands list when the last hand finishes, so once a
+     * round settles active() is out of bounds. A can*() that dereferences first
+     * therefore throws IndexOutOfBoundsException instead of answering "no" --
+     * and these are exactly the methods a UI calls to decide which buttons to
+     * enable, which it does immediately after every round.
+     *
+     * The desktop refresh() asked canHit() fourth in its sequence, so after 78%
+     * of completed rounds it threw and every later button update, including the
+     * table repaint, was silently skipped. On the Swing EDT an uncaught
+     * exception aborts the handler without killing the app, which is why this
+     * survived a full review and 249 tests: nothing crashed, the UI just quietly
+     * stopped updating. Found by playing two hands.
+     */
+
     public boolean canHit() {
+        if (phase != Phase.PLAYER) return false;
         Hand h = active();
-        return phase == Phase.PLAYER && !h.isBust() && !h.stood() && !h.splitAce() && h.value() < 21;
+        return !h.isBust() && !h.stood() && !h.splitAce() && h.value() < 21;
     }
     public boolean canStand()       { return phase == Phase.PLAYER && !active().isBust(); }
     public boolean canDouble() {
+        if (phase != Phase.PLAYER) return false;
         Hand h = active();
-        return phase == Phase.PLAYER && h.size() == 2 && bankroll >= h.bet() && !h.splitAce()
+        return h.size() == 2 && bankroll >= h.bet() && !h.splitAce()
                 && (player.size() == 1 || rules.doubleAfterSplit);
     }
     public boolean canSplit() {
+        if (phase != Phase.PLAYER) return false;
         Hand h = active();
-        return phase == Phase.PLAYER && h.size() == 2 && h.isPair() && bankroll >= h.bet()
+        return h.size() == 2 && h.isPair() && bankroll >= h.bet()
                 && player.size() <= rules.maxSplits;
     }
     public boolean canSurrender() {
+        if (phase != Phase.PLAYER) return false;
         Hand h = active();
-        return phase == Phase.PLAYER && rules.lateSurrender && h.size() == 2 && player.size() == 1
+        return rules.lateSurrender && h.size() == 2 && player.size() == 1
                 && !h.fromSplit() && !h.doubled();
     }
 
