@@ -5,6 +5,7 @@ import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.SourceDataLine;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Procedurally synthesized sound effects. No audio files required — every
@@ -25,8 +26,13 @@ public final class SoundFx {
         return t;
     });
 
-    private float volume = 0.6f;
-    private boolean muted;
+    /** Report an unusable mixer once, not once per effect. */
+    private final AtomicBoolean audioWarned = new AtomicBoolean();
+
+    // Written on the EDT (settings dialog), read on the "blackjack-sfx" thread.
+    // volatile is what makes a volume or mute change visible to playback.
+    private volatile float   volume = 0.6f;
+    private volatile boolean muted;
 
     public void setVolume(float v) { this.volume = Math.max(0f, Math.min(1f, v)); }
     public float volume()          { return volume; }
@@ -111,7 +117,7 @@ public final class SoundFx {
         byte[] data = new byte[samples * 2];
         double phaseStep = 2 * Math.PI * freq / FORMAT.getSampleRate();
         double phase = 0;
-        java.util.Random rng = new java.util.Random();
+        java.util.concurrent.ThreadLocalRandom rng = java.util.concurrent.ThreadLocalRandom.current();
 
         for (int i = 0; i < samples; i++) {
             double v;
@@ -138,15 +144,32 @@ public final class SoundFx {
         return Math.min(attack, release);
     }
 
+    /**
+     * Play one buffer on a fresh line, closing it whether or not playback
+     * succeeded. The close has to be in a finally: a mixer that fails partway
+     * through open/start/write/drain would otherwise leak the line, and enough
+     * leaks exhaust the mixer and silence the game permanently.
+     */
     private void writeSample(byte[] data) {
+        SourceDataLine line = null;
         try {
-            SourceDataLine line = AudioSystem.getSourceDataLine(FORMAT);
+            line = AudioSystem.getSourceDataLine(FORMAT);
             line.open(FORMAT);
             line.start();
             line.write(data, 0, data.length);
             line.drain();
-            line.close();
-        } catch (Exception ignored) { /* audio unavailable — silent fail */ }
+        } catch (Exception e) {
+            // Audio being unavailable is normal (headless, no device, muted OS),
+            // so this is not fatal -- but report it once rather than swallowing
+            // every failure silently.
+            if (audioWarned.compareAndSet(false, true)) {
+                System.err.println("Sound effects unavailable: " + e);
+            }
+        } finally {
+            if (line != null) {
+                try { line.close(); } catch (RuntimeException ignored) { }
+            }
+        }
     }
 
     public void shutdown() { pool.shutdownNow(); }

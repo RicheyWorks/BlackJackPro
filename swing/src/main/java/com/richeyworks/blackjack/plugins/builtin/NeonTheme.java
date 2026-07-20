@@ -25,6 +25,7 @@ public final class NeonTheme implements TableTheme {
     private static final Color NEON_CYAN   = new Color(0x18FFFF);
     private static final Color CARD_BG     = new Color(0x101820);
 
+    @Override public String id()          { return "neon"; }
     @Override public String displayName() { return "Neon"; }
     @Override public Color  feltTop()     { return FELT_TOP; }
     @Override public Color  feltBottom()  { return FELT_BOTTOM; }

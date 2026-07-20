@@ -23,6 +23,7 @@ public final class PluginManagerDialog extends JDialog {
 
     public PluginManagerDialog(JFrame parent, PluginRegistry registry) {
         super(parent, "Plugins", true);
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
@@ -34,6 +35,16 @@ public final class PluginManagerDialog extends JDialog {
             content.add(empty);
         } else {
             for (BlackJackPlugin p : registry.all()) content.add(card(p));
+        }
+
+        // A plugin that failed to load is now skipped rather than taking the
+        // game down with it, so this is the only place the user finds out.
+        for (String failure : registry.failures()) {
+            JLabel l = new JLabel("<html><b>Skipped:</b> " + escape(failure) + "</html>");
+            l.setForeground(new Color(0x9E2B0E));
+            l.setBorder(BorderFactory.createEmptyBorder(6, 2, 0, 2));
+            l.setAlignmentX(0);
+            content.add(l);
         }
 
         JButton close = new JButton("Close");
@@ -60,12 +71,23 @@ public final class PluginManagerDialog extends JDialog {
         name.setFont(name.getFont().deriveFont(Font.BOLD, 14f));
         JLabel id   = new JLabel("id: " + p.manifest().id() + "   author: " + p.manifest().author());
         id.setForeground(new Color(0x707070));
-        JLabel desc = new JLabel("<html>" + p.manifest().description() + "</html>");
+        JLabel desc = new JLabel("<html>" + escape(p.manifest().description()) + "</html>");
         c.add(name); c.add(id); c.add(Box.createVerticalStrut(4)); c.add(desc);
         if (!p.themes().isEmpty())       c.add(new JLabel("Themes: "       + p.themes().size()));
         if (!p.aiStrategies().isEmpty()) c.add(new JLabel("AI personalities: " + p.aiStrategies().size()));
         if (!p.sideBets().isEmpty())     c.add(new JLabel("Side bets: "    + p.sideBets().size()));
         c.add(Box.createVerticalStrut(6));
         return c;
+    }
+
+    /**
+     * Swing renders any label starting with {@code <html>} as HTML, so plugin
+     * text goes through here first — a manifest is third-party content and
+     * should not be able to inject markup (or an {@code <img src>} fetch) into
+     * our dialog.
+     */
+    private static String escape(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }

@@ -1,6 +1,7 @@
 package com.richeyworks.blackjack.engine;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
@@ -17,6 +18,13 @@ public final class Engine {
     private int   pendingBet;
     private int   insuranceBet;
     private Phase phase = Phase.BETTING;
+
+    /** Per-hand results of the most recently settled round, parallel to {@link #hands()}. */
+    private final List<Outcome> lastOutcomes = new ArrayList<>();
+    /** Bankroll (including chips already on the felt) when the current round was dealt. */
+    private int roundStartBankroll;
+    /** Net change to the bankroll across the most recently settled round. */
+    private int lastNet;
 
     public Engine(int startingBankroll, Random rng) {
         this(startingBankroll, rng, new BlackjackRules());
@@ -41,6 +49,25 @@ public final class Engine {
     public int            bankroll()   { return bankroll; }
     public int            pendingBet() { return pendingBet; }
     public int            insuranceBet(){ return insuranceBet; }
+
+    /**
+     * Results of the most recently settled round, one entry per hand, in the
+     * same order as {@link #hands()}. Recorded by {@link #settle()} as the money
+     * moves, so it is the authoritative record of what the player was paid —
+     * front ends should render this rather than re-comparing hand values.
+     * Empty until the first round settles; the hands (and these outcomes)
+     * survive into the following {@link Phase#BETTING} phase and are replaced
+     * on the next {@link #deal()}.
+     */
+    public List<Outcome> lastOutcomes() { return Collections.unmodifiableList(lastOutcomes); }
+
+    /**
+     * Net change to the bankroll across the most recently settled round —
+     * positive if the player finished ahead. Covers the main stake plus any
+     * double, split, insurance, or surrender. Side bets settled outside the
+     * engine are not included.
+     */
+    public int lastNet() { return lastNet; }
 
     public void setBankroll(int b) { this.bankroll = b; }
 
@@ -90,6 +117,12 @@ public final class Engine {
     public void deal() {
         if (!canDeal()) throw new IllegalStateException("cannot deal");
         if (shoe.needsShuffle()) shoe.reshuffle();
+
+        // Everything the player owns right now, including the chips already
+        // moved onto the felt -- the baseline for this round's net result.
+        roundStartBankroll = bankroll + pendingBet;
+        lastOutcomes.clear();
+        lastNet = 0;
 
         for (Hand h : player) h.reset();
         player.clear();
@@ -251,14 +284,20 @@ public final class Engine {
         int     dv          = dealer.value();
         boolean dealerBJ    = dealer.isBlackjack();
 
+        // Each branch records an Outcome next to the money it moves, so the
+        // result a front end displays is the same one that was paid.
+        lastOutcomes.clear();
+
         for (Hand h : player) {
             if (h.surrendered()) {
                 stats.losses++;
+                lastOutcomes.add(Outcome.SURRENDER);
                 continue;
             }
             if (h.isBust()) {
                 stats.losses++;
                 stats.busts++;
+                lastOutcomes.add(Outcome.BUST);
                 continue;
             }
             if (h.isBlackjack() && !dealerBJ) {
@@ -267,6 +306,7 @@ public final class Engine {
                 stats.totalReturned += payout;
                 stats.wins++;
                 stats.blackjacks++;
+                lastOutcomes.add(Outcome.BLACKJACK);
                 continue;
             }
             if (dealerBJ) {
@@ -274,8 +314,10 @@ public final class Engine {
                     bankroll        += h.bet();
                     stats.totalReturned += h.bet();
                     stats.pushes++;
+                    lastOutcomes.add(Outcome.PUSH);
                 } else {
                     stats.losses++;
+                    lastOutcomes.add(Outcome.LOSS);
                 }
                 continue;
             }
@@ -285,15 +327,19 @@ public final class Engine {
                 bankroll          += payout;
                 stats.totalReturned += payout;
                 stats.wins++;
+                lastOutcomes.add(Outcome.WIN);
             } else if (pv == dv) {
                 bankroll        += h.bet();
                 stats.totalReturned += h.bet();
                 stats.pushes++;
+                lastOutcomes.add(Outcome.PUSH);
             } else {
                 stats.losses++;
+                lastOutcomes.add(Outcome.LOSS);
             }
         }
         stats.peakBankroll = Math.max(stats.peakBankroll, bankroll);
+        lastNet = bankroll - roundStartBankroll;
         phase = Phase.BETTING;
     }
 }

@@ -11,8 +11,24 @@ import java.awt.Graphics2D;
  *
  * The renderer hands the theme pixel rectangles to draw into; the theme owns
  * fonts, colors, and decorative details.
+ *
+ * <p><b>Graphics state:</b> paint methods receive a scratch {@link Graphics2D}
+ * that the renderer disposes afterwards, so a theme may freely change font,
+ * color, stroke, clip, and transform without restoring them. Nothing a theme
+ * does to that object can affect the rest of the table.
  */
 public interface TableTheme {
+
+    /**
+     * Stable identifier used to persist the user's choice, e.g. {@code "classic"}.
+     * Unlike {@link #displayName()} this must not change between releases and is
+     * never shown to the player — renaming a theme in the UI would otherwise
+     * silently reset everyone's preference.
+     *
+     * <p>Defaults to the display name lowercased so existing themes keep working,
+     * but implementations should override it with a deliberate constant.
+     */
+    default String id() { return displayName().toLowerCase(java.util.Locale.ROOT); }
 
     /** Display name shown in the theme picker. */
     String displayName();
