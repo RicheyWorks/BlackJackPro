@@ -64,6 +64,9 @@ public final class TableScreen extends InputAdapter implements Screen {
     private int lastShoeSeen;
     private boolean greeted;
 
+    /** Live lookup, not a field: switching theme must apply on the next frame. */
+    private GdxPalette pal() { return game.palette(); }
+
     private final OrthographicCamera camera = new OrthographicCamera();
     private final Viewport           viewport = new FitViewport(WORLD_W, WORLD_H, camera);
     private final ShapeRenderer      shapes = new ShapeRenderer();
@@ -305,7 +308,7 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     @Override
     public void render(float delta) {
-        Gdx.gl.glClearColor(BlackJackGame.FELT.r, BlackJackGame.FELT.g, BlackJackGame.FELT.b, 1);
+        Gdx.gl.glClearColor(pal().feltBottom.r, pal().feltBottom.g, pal().feltBottom.b, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         camera.update();
@@ -345,30 +348,30 @@ public final class TableScreen extends InputAdapter implements Screen {
             float a = r.opacityAt(now);
 
             shapes.begin(ShapeRenderer.ShapeType.Filled);
-            shapes.setColor(0.96f, 0.94f, 0.87f, a);
+            shapes.setColor(pal().bubbleFill.r, pal().bubbleFill.g, pal().bubbleFill.b, a);
             shapes.rect(bx, by, bw, bh);
             shapes.end();
 
             shapes.begin(ShapeRenderer.ShapeType.Line);
-            shapes.setColor(0.23f, 0.18f, 0.08f, a);
+            shapes.setColor(pal().bubbleName.r, pal().bubbleName.g, pal().bubbleName.b, a);
             shapes.rect(bx, by, bw, bh);
             shapes.end();
 
             batch.begin();
-            font.setColor(0.42f, 0.35f, 0.18f, a);
+            font.setColor(pal().bubbleName.r, pal().bubbleName.g, pal().bubbleName.b, a);
             font.draw(batch, r.speaker().name(), bx + 12, by + bh - 10);
-            font.setColor(0.12f, 0.10f, 0.07f, a);
+            font.setColor(pal().bubbleInk.r, pal().bubbleInk.g, pal().bubbleInk.b, a);
             // Let libGDX wrap inside the bubble rather than measuring by hand.
             font.draw(batch, r.text(), bx + 12, by + bh - 30, bw - 24, -1, true);
             batch.end();
         }
         // Leave the colour clean for the next frame's opaque passes.
-        font.setColor(BlackJackGame.TEXT);
+        font.setColor(pal().text);
     }
 
     private void drawTable() {
         shapes.begin(ShapeRenderer.ShapeType.Line);
-        shapes.setColor(BlackJackGame.ACCENT);
+        shapes.setColor(pal().accent);
         shapes.arc(WORLD_W / 2, 0, 700, 0, 180);
         shapes.end();
     }
@@ -414,7 +417,7 @@ public final class TableScreen extends InputAdapter implements Screen {
         }
 
         batch.begin();
-        font.setColor(BlackJackGame.TEXT);
+        font.setColor(pal().text);
         layout.setText(font, label);
         font.draw(batch, label, cx - layout.width / 2f, topY - 8);
         batch.end();
@@ -455,11 +458,11 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     private void drawCardBack(float x, float y) {
         shapes.begin(ShapeRenderer.ShapeType.Filled);
-        shapes.setColor(0.08f, 0.13f, 0.24f, 1f);
+        shapes.setColor(pal().backFill);
         shapes.rect(x, y, CARD_W, CARD_H);
         shapes.end();
         shapes.begin(ShapeRenderer.ShapeType.Line);
-        shapes.setColor(BlackJackGame.ACCENT);
+        shapes.setColor(pal().accent);
         shapes.rect(x, y, CARD_W, CARD_H);
         for (int i = 0; i < 12; i++) {
             shapes.line(x, y + i * (CARD_H / 12), x + CARD_W, y + i * (CARD_H / 12));
@@ -468,12 +471,12 @@ public final class TableScreen extends InputAdapter implements Screen {
     }
 
     private void drawButtons() {
-        for (Button b : buttons) b.draw(shapes, batch, font, engine);
+        for (Button b : buttons) b.draw(shapes, batch, font, engine, pal());
     }
 
     private void drawHud() {
         batch.begin();
-        font.setColor(BlackJackGame.TEXT);
+        font.setColor(pal().text);
         font.draw(batch, "Bankroll: $" + engine.bankroll(),    20,  WORLD_H - 12);
         font.draw(batch, "Bet: $"      + currentBet(),        220,  WORLD_H - 12);
         font.draw(batch, "Shoe: "      + engine.shoe().remaining(), 380, WORLD_H - 12);
@@ -482,7 +485,7 @@ public final class TableScreen extends InputAdapter implements Screen {
             font.setColor(1f, 0.5f, 0.5f, 1f);
             font.draw(batch, flashText, WORLD_W / 2 - 200, WORLD_H - 30);
         } else {
-            font.setColor(BlackJackGame.TEXT);
+            font.setColor(pal().text);
             font.draw(batch, statusText, WORLD_W / 2 - 200, WORLD_H - 30);
         }
         batch.end();
@@ -566,31 +569,28 @@ public final class TableScreen extends InputAdapter implements Screen {
             }
         }
 
-        void draw(ShapeRenderer shapes, SpriteBatch batch, BitmapFont font, Engine e) {
+        void draw(ShapeRenderer shapes, SpriteBatch batch, BitmapFont font, Engine e,
+                  GdxPalette pal) {
             boolean enabled = isEnabled(e);
             shapes.begin(ShapeRenderer.ShapeType.Filled);
             if (chipValue > 0) {
-                Color face;
-                switch (chipValue) {
-                    case 1:    face = new Color(0.92f, 0.92f, 0.92f, 1f); break;
-                    case 5:    face = new Color(0.75f, 0.23f, 0.17f, 1f); break;
-                    case 25:   face = new Color(0.18f, 0.49f, 0.20f, 1f); break;
-                    case 100:  face = new Color(0.11f, 0.11f, 0.11f, 1f); break;
-                    case 500:  face = new Color(0.42f, 0.10f, 0.60f, 1f); break;
-                    default:   face = Color.GOLD;
-                }
+                // One definition of chip colours for both front ends -- these
+                // stay constant across themes on purpose, so a player only
+                // learns "green is 25" once.
+                Color face = GdxPalette.chip(chipValue);
                 if (!enabled) face = new Color(face.r * 0.4f, face.g * 0.4f, face.b * 0.4f, 1f);
                 shapes.setColor(face);
                 shapes.circle(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2,
                         bounds.width / 2);
             } else {
-                shapes.setColor(enabled ? new Color(0.55f, 0.37f, 0.17f, 1f)
-                                        : new Color(0.18f, 0.14f, 0.10f, 1f));
+                Color bf = pal.buttonFace;
+                shapes.setColor(enabled ? bf
+                                        : new Color(bf.r * 0.4f, bf.g * 0.4f, bf.b * 0.4f, 1f));
                 shapes.rect(bounds.x, bounds.y, bounds.width, bounds.height);
             }
             shapes.end();
             shapes.begin(ShapeRenderer.ShapeType.Line);
-            shapes.setColor(BlackJackGame.ACCENT);
+            shapes.setColor(pal.accent);
             if (chipValue > 0) {
                 shapes.circle(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2,
                         bounds.width / 2);
@@ -600,7 +600,8 @@ public final class TableScreen extends InputAdapter implements Screen {
             shapes.end();
 
             batch.begin();
-            font.setColor(enabled ? Color.WHITE : new Color(0.6f, 0.6f, 0.6f, 1f));
+            Color ink = chipValue > 0 ? GdxPalette.chipInk(chipValue) : pal.buttonText;
+            font.setColor(enabled ? ink : new Color(0.6f, 0.6f, 0.6f, 1f));
             GlyphLayout l = new GlyphLayout(font, label);
             font.draw(batch, label, bounds.x + (bounds.width - l.width) / 2f,
                     bounds.y + (bounds.height + l.height) / 2f);

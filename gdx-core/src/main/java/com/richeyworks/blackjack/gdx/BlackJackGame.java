@@ -1,7 +1,8 @@
 package com.richeyworks.blackjack.gdx;
 
 import com.badlogic.gdx.Game;
-import com.badlogic.gdx.graphics.Color;
+import com.richeyworks.blackjack.table.Palettes;
+import com.richeyworks.blackjack.table.TablePalette;
 
 /**
  * libGDX entry point. Hands control to {@link TableScreen} immediately.
@@ -14,10 +15,15 @@ import com.badlogic.gdx.graphics.Color;
  */
 public final class BlackJackGame extends Game {
 
-    /** Brand felt color used across the libGDX UI. */
-    public static final Color FELT  = new Color(0x143620ff);
-    public static final Color ACCENT = new Color(0xc9a227ff);
-    public static final Color TEXT   = new Color(0xf8e9a1ff);
+    /**
+     * The active theme, shared by every screen.
+     *
+     * <p>This used to be three hardcoded Colors, which is why the mobile build
+     * had one green felt and no theme picker while the desktop had seven looks.
+     * The palette now comes from {@code core}, so both builds render the same
+     * themes from the same numbers.
+     */
+    private GdxPalette palette = new GdxPalette(Palettes.classic());
 
     private final Platform platform;
     private GameSession    session;
@@ -32,9 +38,25 @@ public final class BlackJackGame extends Game {
     /** Persistent player state. Available from {@link #create()} onwards. */
     public GameSession session() { return session; }
 
+    /** Colours for the active theme. Never null. */
+    public GdxPalette palette() { return palette; }
+
+    /** Switch theme and remember it. Persists immediately, like the rule toggles. */
+    public void setPalette(TablePalette p) {
+        this.palette = new GdxPalette(p);
+        if (session != null) {
+            session.settings().themeId = p.id();
+            session.persist();
+        }
+    }
+
     @Override
     public void create() {
         session = new GameSession(platform);
+        // Restore the saved theme before any screen draws a frame. themeId is
+        // the same settings key the desktop build uses, so a shared data
+        // directory keeps one choice across both.
+        palette = new GdxPalette(Palettes.byId(session.settings().themeId));
         table   = new TableScreen(this);
         setScreen(table);
     }

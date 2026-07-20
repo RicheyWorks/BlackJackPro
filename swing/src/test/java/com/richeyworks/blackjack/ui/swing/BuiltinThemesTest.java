@@ -7,6 +7,8 @@ import com.richeyworks.blackjack.plugin.TableTheme;
 import com.richeyworks.blackjack.plugins.builtin.BuiltinThemes;
 import com.richeyworks.blackjack.plugins.builtin.NeonTheme;
 import com.richeyworks.blackjack.settings.GameSettings;
+import com.richeyworks.blackjack.table.Palettes;
+import com.richeyworks.blackjack.table.TablePalette;
 import org.junit.jupiter.api.Test;
 
 import java.awt.Color;
@@ -155,6 +157,34 @@ class BuiltinThemesTest {
             assertTrue(alpha > 0 && alpha < 160,
                     t.displayName() + " highlight alpha is " + alpha
                             + "; opaque would hide the active hand it's meant to mark");
+        }
+    }
+
+
+    @Test void desktopExposesExactlyTheThemesCoreDefines() {
+        // The whole point of moving palettes to core: if these lists diverge,
+        // a player has themes on one platform and not the other, which is the
+        // situation this change existed to end.
+        Set<String> desktop = new HashSet<>();
+        for (TableTheme t : allThemes()) desktop.add(t.id());
+        Set<String> shared = new HashSet<>();
+        for (TablePalette p : Palettes.all()) shared.add(p.id());
+        assertEquals(shared, desktop,
+                "desktop themes and core palettes have drifted apart");
+    }
+
+    @Test void desktopColoursMatchTheSharedDefinition() {
+        // Swing keeps hand-written renderers for Classic and Neon, but their
+        // colours must still come from the one definition, or "Neon" means two
+        // different things depending on which build you opened.
+        for (TableTheme t : allThemes()) {
+            TablePalette p = Palettes.byId(t.id());
+            assertEquals(new Color(p.feltTop()),    t.feltTop(),
+                    t.displayName() + " felt top differs from the shared palette");
+            assertEquals(new Color(p.feltBottom()), t.feltBottom(),
+                    t.displayName() + " felt bottom differs from the shared palette");
+            assertEquals(new Color(p.accent()),     t.accent(),
+                    t.displayName() + " accent differs from the shared palette");
         }
     }
 

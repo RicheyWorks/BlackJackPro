@@ -10,9 +10,11 @@ Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing 
 
 - **House rules:** 6-deck shoe (~75% penetration), 3:2 blackjack, push on tie, double on any two cards, split up to 4 hands (split aces get one card), late surrender, insurance (2:1), dealer stands on soft 17 (toggle in Options). The game pays whole dollars, and any odd half rounds in the player's favour — a \$25 natural pays 38, not 37
 - **Swing desktop:** Custom-painted felt/cards/chips, procedural SFX, settings dialog, 12 achievements with toasts, bankroll + stats persistence
-- **Plugins:** ServiceLoader + external JARs — built-in Neon theme, Hi-Lo counter AI, 21+3 side bet
+- **Themes:** seven table looks (Classic Felt, Neon, Midnight, Crimson Room, Desert Sun, Ink, Brass Deco) defined once in `core` and rendered by both the Swing and libGDX front ends
+- **Table chatter:** three characters who react to play with ~520 lines of dialogue; they never encourage a bigger bet, and a test enforces it
+- **Plugins:** ServiceLoader + external JARs — Hi-Lo counter AI, 21+3 side bet
 - **Distribution:** `jpackage` native installers (MSI/DMG/DEB); optional Steamworks bridge
-- **Mobile (WIP):** libGDX `TableScreen` with bankroll/stats/achievement persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
+- **Mobile (WIP):** libGDX `TableScreen` with all seven themes, table chatter, settings/stats menu, and bankroll/stats/achievement persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
 
 ## Build & run
 
@@ -47,7 +49,7 @@ music feature stays quietly off until you add some.
 |------|--------|
 | Core engine + tests | Working — JUnit 5; CI green on Ubuntu, Windows, macOS |
 | Swing desktop | Primary polished build — themes, plugins, achievements, saves |
-| libGDX + Android | Playable — table UI, saves/stats/achievements persist, debug APK builds |
+| libGDX + Android | Playable — themes, chatter, settings menu, saves/stats/achievements persist |
 | iOS / mobile polish | Not started — animated cards, sound, settings UI on mobile |
 
 ## Tech stack

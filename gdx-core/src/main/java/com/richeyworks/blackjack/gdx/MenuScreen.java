@@ -16,6 +16,7 @@ import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.richeyworks.blackjack.achievement.Achievement;
 import com.richeyworks.blackjack.engine.SessionStats;
+import com.richeyworks.blackjack.table.Palettes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,11 +36,13 @@ import java.util.List;
 public final class MenuScreen extends InputAdapter implements Screen {
 
     private static final float WORLD_W = 1280f, WORLD_H = 720f;
-    private static final Color PANEL   = new Color(0x0d2a18ff);
     private static final Color ON      = new Color(0x4caf50ff);
     private static final Color OFF     = new Color(0x60605aff);
     private static final Color DANGER  = new Color(0x8b3030ff);
     private static final Color MUTED   = new Color(0x9a9a90ff);
+
+    /** Row background, taken from the theme so the menu never clashes with the felt. */
+    private Color panel() { return game.palette().feltTop; }
 
     private final BlackJackGame game;
     private final TableScreen   table;
@@ -77,6 +80,8 @@ public final class MenuScreen extends InputAdapter implements Screen {
             y -= h + 14;
         }
         y -= 20;
+        rows.add(new Row(new Rectangle(x, y, w, h), Action.THEME));
+        y -= h + 14;
         rows.add(new Row(new Rectangle(x, y, w, h), Action.RESET));
         y -= h + 14;
         rows.add(new Row(new Rectangle(x, y, w, h), Action.BACK));
@@ -86,7 +91,8 @@ public final class MenuScreen extends InputAdapter implements Screen {
 
     @Override
     public void render(float delta) {
-        Gdx.gl.glClearColor(BlackJackGame.FELT.r, BlackJackGame.FELT.g, BlackJackGame.FELT.b, 1);
+        Gdx.gl.glClearColor(game.palette().feltBottom.r, game.palette().feltBottom.g,
+                            game.palette().feltBottom.b, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
         camera.update();
         shapes.setProjectionMatrix(camera.combined);
@@ -101,29 +107,31 @@ public final class MenuScreen extends InputAdapter implements Screen {
         for (Row r : rows) {
             Color fill;
             if (r.rule != null)                fill = session.rule(r.rule) ? ON : OFF;
-            else if (r.action == Action.RESET) fill = confirmingReset ? DANGER : PANEL;
-            else                               fill = PANEL;
+            else if (r.action == Action.RESET) fill = confirmingReset ? DANGER : panel();
+            else                               fill = panel();
             shapes.setColor(fill);
             shapes.rect(r.bounds.x, r.bounds.y, r.bounds.width, r.bounds.height);
         }
         shapes.end();
 
         shapes.begin(ShapeRenderer.ShapeType.Line);
-        shapes.setColor(BlackJackGame.ACCENT);
+        shapes.setColor(game.palette().accent);
         for (Row r : rows) shapes.rect(r.bounds.x, r.bounds.y, r.bounds.width, r.bounds.height);
         shapes.end();
     }
 
     private void drawText() {
         batch.begin();
-        bigFont.setColor(BlackJackGame.TEXT);
+        bigFont.setColor(game.palette().text);
         bigFont.draw(batch, "Settings", 60, WORLD_H - 60);
 
         boolean rulesLocked = !session.canChangeRules();
         for (Row r : rows) {
-            font.setColor(BlackJackGame.TEXT);
+            font.setColor(game.palette().text);
             String label = r.rule != null
                     ? r.rule.label() + "   [" + (session.rule(r.rule) ? "ON" : "OFF") + "]"
+                    : r.action == Action.THEME
+                        ? "Theme: " + game.palette().name() + "   (tap to change)"
                     : r.action == Action.RESET
                         ? (confirmingReset ? "Tap again to confirm reset" : "New session (reset bankroll & stats)")
                         : "Back to table";
@@ -136,7 +144,7 @@ public final class MenuScreen extends InputAdapter implements Screen {
                     60, WORLD_H - 118);
         }
         if (!notice.isEmpty()) {
-            font.setColor(BlackJackGame.ACCENT);
+            font.setColor(game.palette().accent);
             font.draw(batch, notice, 60, 60);
         }
 
@@ -148,9 +156,9 @@ public final class MenuScreen extends InputAdapter implements Screen {
     private void drawStats() {
         SessionStats s = session.engine().stats();
         float x = 660, y = WORLD_H - 150;
-        font.setColor(BlackJackGame.ACCENT);
+        font.setColor(game.palette().accent);
         font.draw(batch, "Session", x, y + 34);
-        font.setColor(BlackJackGame.TEXT);
+        font.setColor(game.palette().text);
         String[] lines = {
                 "Bankroll:  $" + session.engine().bankroll(),
                 "Hands:     " + s.hands,
@@ -168,10 +176,10 @@ public final class MenuScreen extends InputAdapter implements Screen {
         int unlocked = 0, total = 0;
         for (Achievement a : session.achievements().all()) { total++; if (a.unlocked()) unlocked++; }
 
-        font.setColor(BlackJackGame.ACCENT);
+        font.setColor(game.palette().accent);
         font.draw(batch, "Achievements  " + unlocked + "/" + total, x, y + 34);
         for (Achievement a : session.achievements().all()) {
-            font.setColor(a.unlocked() ? BlackJackGame.TEXT : MUTED);
+            font.setColor(a.unlocked() ? game.palette().text : MUTED);
             String mark = a.unlocked() ? "*" : "-";
             String prog = a.goal() > 1 && !a.unlocked() ? "  (" + a.progress() + "/" + a.goal() + ")" : "";
             font.draw(batch, mark + " " + a.name() + prog, x, y);
@@ -201,6 +209,15 @@ public final class MenuScreen extends InputAdapter implements Screen {
             notice = applied
                     ? r.rule.label() + " " + (session.rule(r.rule) ? "on" : "off") + " — saved"
                     : "Finish the current hand before changing house rules.";
+            confirmingReset = false;
+            return;
+        }
+        if (r.action == Action.THEME) {
+            // Cycles rather than opening a list: seven themes is few enough
+            // that tapping through them is quicker than a submenu, and the
+            // change is visible behind this screen straight away.
+            game.setPalette(Palettes.next(game.palette().id()));
+            notice = "Theme: " + game.palette().name() + " - saved";
             confirmingReset = false;
             return;
         }
@@ -251,7 +268,7 @@ public final class MenuScreen extends InputAdapter implements Screen {
 
     /* ---------- rows ---------- */
 
-    private enum Action { RESET, BACK }
+    private enum Action { THEME, RESET, BACK }
 
     /** A tappable row: either a rule toggle or a plain action. */
     private static final class Row {

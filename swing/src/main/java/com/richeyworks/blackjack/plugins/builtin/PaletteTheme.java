@@ -3,6 +3,7 @@ package com.richeyworks.blackjack.plugins.builtin;
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Rank;
 import com.richeyworks.blackjack.plugin.TableTheme;
+import com.richeyworks.blackjack.table.TablePalette;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -27,58 +28,42 @@ import java.awt.geom.RoundRectangle2D;
  * disposes afterwards, so nothing here needs to restore font, colour, or
  * stroke.
  *
- * @param backStyle how the card back is decorated, which is what stops a set of
- *                  recoloured themes looking like the same theme five times
+ * See {@link TablePalette} for the colour data itself
  */
 public class PaletteTheme implements TableTheme {
 
-    /** Card-back decoration. The cheapest way to give a palette its own identity. */
-    public enum BackStyle {
-        /** Diagonal cross-hatch. Traditional. */
-        HATCH,
-        /** Concentric rounded rectangles. Calm, modern. */
-        RINGS,
-        /** Vertical pinstripes. Formal. */
-        STRIPES,
-        /** Radiating chevrons from the centre. Art-deco. */
-        CHEVRON,
-        /** A single bordered panel with a monogram. Minimal. */
-        PLAIN
+    private final TablePalette palette;
+
+    private final Color feltTop;
+    private final Color feltBottom;
+    private final Color accent;
+    private final Color cardFace;
+    private final Color cardInk;
+    private final Color cardRed;
+    private final Color cardEdge;
+    private final Color backFill;
+    private final Color backLine;
+
+    /**
+     * @param palette the shared definition from {@code core}. Taking it whole
+     *                rather than as loose colours is what stops the desktop and
+     *                mobile builds drifting into two different "Midnight".
+     */
+    public PaletteTheme(TablePalette palette) {
+        this.palette    = palette;
+        this.feltTop    = new Color(palette.feltTop());
+        this.feltBottom = new Color(palette.feltBottom());
+        this.accent     = new Color(palette.accent());
+        this.cardFace   = new Color(palette.cardFace());
+        this.cardInk    = new Color(palette.cardInk());
+        this.cardRed    = new Color(palette.cardRed());
+        this.cardEdge   = new Color(palette.cardEdge());
+        this.backFill   = new Color(palette.backFill());
+        this.backLine   = new Color(palette.backLine());
     }
 
-    private final String    id;
-    private final String    displayName;
-    private final Color     feltTop;
-    private final Color     feltBottom;
-    private final Color     accent;
-    private final Color     cardFace;
-    private final Color     cardInk;
-    private final Color     cardRed;
-    private final Color     cardEdge;
-    private final Color     backFill;
-    private final Color     backLine;
-    private final BackStyle backStyle;
-
-    public PaletteTheme(String id, String displayName,
-                        Color feltTop, Color feltBottom, Color accent,
-                        Color cardFace, Color cardInk, Color cardRed, Color cardEdge,
-                        Color backFill, Color backLine, BackStyle backStyle) {
-        this.id          = id;
-        this.displayName = displayName;
-        this.feltTop     = feltTop;
-        this.feltBottom  = feltBottom;
-        this.accent      = accent;
-        this.cardFace    = cardFace;
-        this.cardInk     = cardInk;
-        this.cardRed     = cardRed;
-        this.cardEdge    = cardEdge;
-        this.backFill    = backFill;
-        this.backLine    = backLine;
-        this.backStyle   = backStyle;
-    }
-
-    @Override public String id()          { return id; }
-    @Override public String displayName() { return displayName; }
+    @Override public String id()          { return palette.id(); }
+    @Override public String displayName() { return palette.displayName(); }
     @Override public Color  feltTop()     { return feltTop; }
     @Override public Color  feltBottom()  { return feltBottom; }
     @Override public Color  accent()      { return accent; }
@@ -150,7 +135,7 @@ public class PaletteTheme implements TableTheme {
         g.clip(r);
         g.setColor(backLine);
         g.setStroke(new BasicStroke(1.1f));
-        switch (backStyle) {
+        switch (palette.backStyle()) {
             case HATCH -> {
                 for (int i = -h; i < w + h; i += 8) {
                     g.drawLine(x + i, y, x + i - h, y + h);
