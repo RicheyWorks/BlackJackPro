@@ -20,6 +20,7 @@ public final class BlackJackGame extends Game {
     public static final Color TEXT   = new Color(0xf8e9a1ff);
 
     private final Platform platform;
+    private GameSession    session;
 
     public BlackJackGame(Platform platform) {
         this.platform = platform;
@@ -27,9 +28,32 @@ public final class BlackJackGame extends Game {
 
     public Platform platform() { return platform; }
 
+    /** Persistent player state. Available from {@link #create()} onwards. */
+    public GameSession session() { return session; }
+
     @Override
     public void create() {
+        session = new GameSession(platform);
         setScreen(new TableScreen(this));
+    }
+
+    /**
+     * Android calls this on every task switch, incoming call, and screen-off,
+     * and it is the last callback guaranteed to run before the process may be
+     * killed — {@code dispose()} frequently never arrives. Saving here is what
+     * makes progress survive on mobile.
+     */
+    @Override
+    public void pause() {
+        super.pause();          // forwards to the active Screen
+        if (session != null) session.persist();
+    }
+
+    /** Desktop close and orderly Android teardown both land here. */
+    @Override
+    public void dispose() {
+        if (session != null) session.persist();
+        super.dispose();        // disposes the active Screen
     }
 
     /**
@@ -44,9 +68,14 @@ public final class BlackJackGame extends Game {
         /** Display a transient toast/notification. */
         default void toast(String msg) { System.out.println("[toast] " + msg); }
 
-        /** Storage location for save files. Implementation chooses
-         *  ({@code Gdx.files.local(...)} on desktop, internal app storage on
-         *  Android, etc). */
-        default String saveDir() { return "."; }
+        /**
+         * Absolute directory for saves, settings, and achievements.
+         *
+         * <p>Returning null or blank defers to {@code AppPaths} host detection,
+         * which is right for desktop and wrong for Android — there
+         * {@code os.name} is {@code Linux} and {@code user.home} is not
+         * writable, so Android must return {@code getFilesDir()}.
+         */
+        default String saveDir() { return null; }
     }
 }

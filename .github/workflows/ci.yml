@@ -37,7 +37,10 @@ jobs:
 
       - name: Build & test
         shell: bash
-        run: ./gradlew :core:test :swing:test :platform:test :gdx-desktop:classes --no-daemon
+        # :gdx-core:test covers the mobile save/restore cycle, which needs no GL
+        # context or device. The Android APK itself still isn't built here (it
+        # needs the SDK); :gdx-desktop:classes is the compile check for the port.
+        run: ./gradlew :core:test :swing:test :platform:test :gdx-core:test :gdx-desktop:classes --no-daemon
 
       - name: Upload test reports
         if: always()

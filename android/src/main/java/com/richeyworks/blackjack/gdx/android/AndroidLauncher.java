@@ -54,7 +54,10 @@ public final class AndroidLauncher extends AndroidApplication {
 
         @Override
         public String saveDir() {
-            // Internal app storage — survives uninstall? No. App-private though.
+            // App-private internal storage: no permission needed, not visible to
+            // other apps, and removed on uninstall. This must be supplied
+            // explicitly -- AppPaths' host detection sees os.name=Linux on
+            // Android and would resolve against an unwritable user.home.
             return activity.getFilesDir().getAbsolutePath();
         }
     }

@@ -19,4 +19,12 @@ val gdxVersion = "1.12.1"
 dependencies {
     api(project(":core"))
     api("com.badlogicgames.gdx:gdx:$gdxVersion")
+
+    testImplementation(platform("org.junit:junit-bom:5.10.3"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

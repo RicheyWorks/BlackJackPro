@@ -18,8 +18,12 @@ public final class DesktopLauncher {
         cfg.setWindowedMode(1280, 720);
         cfg.useVsync(true);
         cfg.setForegroundFPS(60);
+        // Returning null defers to AppPaths host detection, which resolves the
+        // same per-user directory the Swing build uses -- so the desktop preview
+        // shares one save rather than scattering save.txt into whatever
+        // directory the process happened to start in.
         new Lwjgl3Application(new BlackJackGame(new BlackJackGame.Platform() {
-            @Override public String saveDir() { return "."; }
+            @Override public String saveDir() { return null; }
         }), cfg);
     }
 }

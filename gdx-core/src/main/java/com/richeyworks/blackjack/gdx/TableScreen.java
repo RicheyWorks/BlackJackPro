@@ -14,14 +14,16 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.richeyworks.blackjack.achievement.AchievementService;
 import com.richeyworks.blackjack.engine.BasicStrategy;
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Hand;
+import com.richeyworks.blackjack.engine.Outcome;
 import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.engine.Rank;
+import com.richeyworks.blackjack.engine.SessionStats;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,7 +42,13 @@ public final class TableScreen extends InputAdapter implements Screen {
     private static final float CARD_W  = 110f, CARD_H = 154f;
 
     private final BlackJackGame game;
+    private final GameSession   session;
     private final Engine        engine;
+
+    /** Rounds already post-processed, so a result is announced exactly once. */
+    private int processedHands;
+    /** Consecutive winning rounds, for the streak achievement. */
+    private int winStreak;
 
     private final OrthographicCamera camera = new OrthographicCamera();
     private final Viewport           viewport = new FitViewport(WORLD_W, WORLD_H, camera);
@@ -56,11 +64,26 @@ public final class TableScreen extends InputAdapter implements Screen {
     private String  flashText;
 
     public TableScreen(BlackJackGame game) {
-        this.game   = game;
-        this.engine = new Engine(1000, new SecureRandom());
+        this.game    = game;
+        this.session = game.session();
+        // The engine comes from the session, which has already restored the
+        // bankroll and lifetime stats from disk. Constructing a fresh
+        // Engine(1000, ...) here is what used to throw away every player's
+        // progress on each launch.
+        this.engine  = session.engine();
+        this.processedHands = engine.stats().hands;
         bigFont.getData().setScale(2f);
         Gdx.input.setInputProcessor(this);
         buildButtons();
+        statusText = engine.stats().hands > 0
+                ? "Welcome back — bankroll $" + engine.bankroll() + ". Place your bet."
+                : "Place your bet to begin.";
+
+        // Android has a native notification affordance; the desktop Platform
+        // falls back to stdout. Either way the player finds out they unlocked
+        // something, which the port had no way of telling them before.
+        session.achievements().onUnlock(
+                a -> game.platform().toast("Achievement unlocked: " + a.name()));
     }
 
     /* ---------- button layout ---------- */
@@ -105,8 +128,69 @@ public final class TableScreen extends InputAdapter implements Screen {
     /* ---------- engine wrappers ---------- */
 
     private void safe(Runnable r, String fallback) {
-        try { r.run(); }
+        try {
+            r.run();
+            postAction();
+        }
         catch (RuntimeException ex) { flash(fallback != null ? fallback : ex.getMessage()); }
+    }
+
+    /**
+     * Run after any engine action. Fires {@link #onRoundComplete()} exactly once
+     * per round, keyed on the engine's hand counter rather than a phase
+     * transition — the engine settles synchronously, so a round that ends during
+     * the deal (a dealt natural, or a dealer blackjack) or straight out of the
+     * insurance prompt never presents an observable SETTLE phase to watch for.
+     */
+    private void postAction() {
+        if (engine.phase() == Phase.BETTING && engine.stats().hands > processedHands) {
+            processedHands = engine.stats().hands;
+            onRoundComplete();
+        }
+    }
+
+    private void onRoundComplete() {
+        List<Outcome> outcomes = engine.lastOutcomes();
+        if (outcomes.isEmpty()) return;
+
+        // The engine assigns each hand an outcome as it pays it out, so what the
+        // player reads always matches what they were paid. Re-deriving it here
+        // from hand values would be a second copy of the settlement rules.
+        boolean won   = false, pushed = false, natural = false;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < outcomes.size(); i++) {
+            Outcome o = outcomes.get(i);
+            won     |= o.isWin();
+            pushed  |= o == Outcome.PUSH;
+            natural |= o == Outcome.BLACKJACK;
+            if (outcomes.size() > 1) sb.append("Hand ").append(i + 1).append(": ");
+            sb.append(o.label()).append("   ");
+        }
+        int net = engine.lastNet();
+        sb.append(net > 0 ? "+$" + net : net < 0 ? "-$" + (-net) : "even");
+        statusText = sb.toString().trim();
+
+        if (won) game.platform().hapticTick();
+
+        AchievementService a = session.achievements();
+        SessionStats       s = engine.stats();
+        a.increment("first_hand");
+        if (won)     { a.increment("first_win"); a.increment("ten_wins"); a.increment("fifty_wins"); }
+        if (natural)   a.increment("first_blackjack");
+        if (s.splits     > 0) a.setProgress("first_split", 1);
+        if (s.doubles    > 0) a.setProgress("first_double", 1);
+        if (s.surrenders > 0) a.setProgress("first_surrender", 1);
+        if (won && engine.dealer().isBust()) a.increment("survived_bust");
+        a.setProgress("bankroll_5k",  Math.min(5000,  engine.bankroll()));
+        a.setProgress("bankroll_10k", Math.min(10000, engine.bankroll()));
+        // A push keeps a streak alive; only a loss breaks it.
+        if (won)               winStreak++;
+        else if (!pushed)      winStreak = 0;
+        a.setProgress("survived_bust_streak", winStreak);
+
+        // Money changed hands and achievements may have unlocked, so make it
+        // durable now rather than trusting the app to get a pause() later.
+        session.persist();
     }
 
     private void showHint() {
@@ -283,10 +367,21 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     @Override public void resize(int w, int h) { viewport.update(w, h, true); }
     @Override public void show()     { }
-    @Override public void hide()     { }
-    @Override public void pause()    { }
     @Override public void resume()   { }
+
+    /**
+     * Android delivers this on every task switch, incoming call, and screen-off,
+     * and it is the last callback guaranteed before the process can be killed.
+     * {@link BlackJackGame#pause()} forwards here, so the save happens whether
+     * the platform notifies the game or the screen.
+     */
+    @Override public void pause()    { session.persist(); }
+
+    /** Leaving the screen for another is also a good moment to be durable. */
+    @Override public void hide()     { session.persist(); }
+
     @Override public void dispose()  {
+        session.persist();
         shapes.dispose(); batch.dispose(); font.dispose(); bigFont.dispose();
     }
 

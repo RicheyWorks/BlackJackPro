@@ -20,7 +20,15 @@ android {
 
     defaultConfig {
         applicationId = "com.richeyworks.blackjack"
-        minSdk        = 21
+        // API 26 (Android 8.0), not 21: :core persists saves, settings, and
+        // achievements through java.nio.file, which only exists natively from
+        // 26. Below that it has to be emulated via desugar_jdk_libs_nio, and
+        // Google documents that some nio APIs cannot be emulated and throw
+        // UnsupportedOperationException -- AtomicFiles depends on exactly those
+        // (Files.move with ATOMIC_MOVE, createTempFile), so the crash-safe
+        // writes the security audit added would fail on precisely the old,
+        // low-memory devices most likely to kill the app mid-write.
+        minSdk        = 26
         targetSdk     = 34
         versionCode   = 1
         versionName   = "0.3.0"

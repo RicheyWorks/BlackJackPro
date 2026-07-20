@@ -12,7 +12,7 @@ Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing 
 - **Swing desktop:** Custom-painted felt/cards/chips, procedural SFX, settings dialog, 12 achievements with toasts, bankroll + stats persistence
 - **Plugins:** ServiceLoader + external JARs — built-in Neon theme, Hi-Lo counter AI, 21+3 side bet
 - **Distribution:** `jpackage` native installers (MSI/DMG/DEB); optional Steamworks bridge
-- **Mobile (WIP):** libGDX `TableScreen`, Android debug APK; iOS not wired yet
+- **Mobile (WIP):** libGDX `TableScreen` with bankroll/stats/achievement persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
 
 ## Build & run
 
@@ -42,8 +42,8 @@ Requires **JDK 21** on PATH. The Gradle wrapper is included — no separate Grad
 |------|--------|
 | Core engine + tests | Working — JUnit 5; CI green on Ubuntu, Windows, macOS |
 | Swing desktop | Primary polished build — themes, plugins, achievements, saves |
-| libGDX + Android | Foundation landed — basic table UI, debug APK builds |
-| iOS / mobile polish | Not started — animated cards, haptics, achievement port |
+| libGDX + Android | Playable — table UI, saves/stats/achievements persist, debug APK builds |
+| iOS / mobile polish | Not started — animated cards, sound, settings UI on mobile |
 
 ## Tech stack
 
