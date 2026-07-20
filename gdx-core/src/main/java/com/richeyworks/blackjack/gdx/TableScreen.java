@@ -49,6 +49,8 @@ public final class TableScreen extends InputAdapter implements Screen {
     private int processedHands;
     /** Consecutive winning rounds, for the streak achievement. */
     private int winStreak;
+    /** Built on first use and reused, so returning keeps the hand in progress. */
+    private MenuScreen menu;
 
     private final OrthographicCamera camera = new OrthographicCamera();
     private final Viewport           viewport = new FitViewport(WORLD_W, WORLD_H, camera);
@@ -73,7 +75,6 @@ public final class TableScreen extends InputAdapter implements Screen {
         this.engine  = session.engine();
         this.processedHands = engine.stats().hands;
         bigFont.getData().setScale(2f);
-        Gdx.input.setInputProcessor(this);
         buildButtons();
         statusText = engine.stats().hands > 0
                 ? "Welcome back — bankroll $" + engine.bankroll() + ". Place your bet."
@@ -111,6 +112,23 @@ public final class TableScreen extends InputAdapter implements Screen {
         buttons.add(action(630,       ay, 90, 50, "Insure",    () -> safe(() -> engine.takeInsurance(true),  "Not insurance time.")));
         buttons.add(action(730,       ay, 90, 50, "Decline",   () -> safe(() -> engine.takeInsurance(false), "Not insurance time.")));
         buttons.add(action(830,       ay, 90, 50, "Hint",      this::showHint));
+        buttons.add(action(930,       ay, 90, 50, "Menu",      this::openMenu));
+    }
+
+    /**
+     * Open settings/stats. The menu keeps a reference back to this screen, so a
+     * hand in progress survives the round trip.
+     */
+    private void openMenu() {
+        if (menu == null) menu = new MenuScreen(game, this);
+        game.setScreen(menu);
+    }
+
+    /** Called by {@link MenuScreen} after a reset so stale counters don't leak. */
+    void onSessionReset() {
+        processedHands = engine.stats().hands;
+        winStreak      = 0;
+        statusText     = "New session. Place your bet.";
     }
 
     private Button chipButton(float x, float y, float size, int value) {
@@ -366,7 +384,14 @@ public final class TableScreen extends InputAdapter implements Screen {
     }
 
     @Override public void resize(int w, int h) { viewport.update(w, h, true); }
-    @Override public void show()     { }
+
+    /**
+     * Claim input here rather than in the constructor: coming back from
+     * {@link MenuScreen} has to restore this screen's processor, and a
+     * constructor only runs once.
+     */
+    @Override public void show()     { Gdx.input.setInputProcessor(this); }
+
     @Override public void resume()   { }
 
     /**
@@ -382,6 +407,7 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     @Override public void dispose()  {
         session.persist();
+        if (menu != null) { menu.dispose(); menu = null; }
         shapes.dispose(); batch.dispose(); font.dispose(); bigFont.dispose();
     }
 

@@ -21,6 +21,7 @@ public final class BlackJackGame extends Game {
 
     private final Platform platform;
     private GameSession    session;
+    private TableScreen    table;
 
     public BlackJackGame(Platform platform) {
         this.platform = platform;
@@ -34,7 +35,8 @@ public final class BlackJackGame extends Game {
     @Override
     public void create() {
         session = new GameSession(platform);
-        setScreen(new TableScreen(this));
+        table   = new TableScreen(this);
+        setScreen(table);
     }
 
     /**
@@ -49,11 +51,18 @@ public final class BlackJackGame extends Game {
         if (session != null) session.persist();
     }
 
-    /** Desktop close and orderly Android teardown both land here. */
+    /**
+     * Desktop close and orderly Android teardown both land here.
+     *
+     * <p>{@code Game.dispose()} only calls {@code hide()} on the current screen —
+     * it never disposes any of them — so every screen's GL resources have to be
+     * released explicitly or they leak.
+     */
     @Override
     public void dispose() {
         if (session != null) session.persist();
-        super.dispose();        // disposes the active Screen
+        super.dispose();            // hides the active screen
+        if (table != null) table.dispose();   // and disposes the menu it owns
     }
 
     /**

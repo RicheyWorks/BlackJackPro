@@ -2,6 +2,7 @@ package com.richeyworks.blackjack.gdx;
 
 import com.richeyworks.blackjack.achievement.AchievementService;
 import com.richeyworks.blackjack.engine.Engine;
+import com.richeyworks.blackjack.engine.Phase;
 import com.richeyworks.blackjack.persist.AppPaths;
 import com.richeyworks.blackjack.persist.SaveManager;
 import com.richeyworks.blackjack.settings.GameSettings;
@@ -86,5 +87,68 @@ public final class GameSession {
         engine.stats().reset();
         engine.shoe().reshuffle();
         persist();
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* House rules                                                             */
+    /* ----------------------------------------------------------------------- */
+
+    /**
+     * House rules may only change between rounds. Altering how the dealer draws
+     * while a hand is live would move the odds after the player has already
+     * committed chips.
+     */
+    public boolean canChangeRules() {
+        return engine.phase() == Phase.BETTING;
+    }
+
+    /**
+     * Apply a house-rule change to both the live engine and the saved settings.
+     *
+     * <p>Writing only one of the two is how the desktop build's menu and
+     * settings dialog drifted apart (SW-13): the engine had the new value, the
+     * settings file kept the old one, and the next launch silently reverted it.
+     *
+     * @return true if the change was applied; false if a hand is in progress
+     */
+    public boolean setRule(Rule rule, boolean enabled) {
+        if (!canChangeRules()) return false;
+        switch (rule) {
+            case DEALER_HITS_SOFT_17:
+                settings.dealerHitsSoft17 = enabled;
+                engine.rules().dealerHitsSoft17 = enabled;
+                break;
+            case LATE_SURRENDER:
+                settings.lateSurrender = enabled;
+                engine.rules().lateSurrender = enabled;
+                break;
+            case OFFER_INSURANCE:
+                settings.offerInsurance = enabled;
+                engine.rules().offerInsurance = enabled;
+                break;
+        }
+        persist();
+        return true;
+    }
+
+    /** Current value of a rule, read from the engine (the authority in play). */
+    public boolean rule(Rule rule) {
+        switch (rule) {
+            case DEALER_HITS_SOFT_17: return engine.rules().dealerHitsSoft17;
+            case LATE_SURRENDER:      return engine.rules().lateSurrender;
+            case OFFER_INSURANCE:     return engine.rules().offerInsurance;
+            default:                  return false;
+        }
+    }
+
+    /** The house rules a player is allowed to change. */
+    public enum Rule {
+        DEALER_HITS_SOFT_17("Dealer hits soft 17"),
+        LATE_SURRENDER("Late surrender"),
+        OFFER_INSURANCE("Offer insurance");
+
+        private final String label;
+        Rule(String label) { this.label = label; }
+        public String label() { return label; }
     }
 }

@@ -34,3 +34,10 @@ Thumbs.db
 
 # Android local SDK path (never commit)
 local.properties
+
+# Machine-specific Gradle config. Untracked deliberately in 39788a3 — it pins a
+# local JDK path, which breaks the build on every other machine and in CI.
+gradle.properties
+
+# Local agent/tool scratch
+.claude/
