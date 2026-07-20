@@ -24,7 +24,7 @@ import java.util.Map;
  * future line cannot quietly break it.
  *
  * <h2>Why there are so many lines</h2>
- * Roughly 350 of them, ten or so per character per event. Dialogue banks feel
+ * Roughly 520 of them, six to ten per character per event. Dialogue banks feel
  * fresh for about as long as it takes to hear the same line twice, and a
  * player will sit through hundreds of hands in a session. The cooldowns in
  * {@link TableChatter} stretch the bank further by speaking on maybe a third of
@@ -201,6 +201,79 @@ public final class Personas {
                 "That stack's had a hard time. So have you.",
                 "There's no prize for staying, you know."));
 
+
+        l.put(TableEvent.SESSION_START, List.of(
+                "Evening. Pull up a stool.",
+                "Ah, company. Good.",
+                "Evening, dear. Mind the seat, it wobbles.",
+                "Hello there. Dutch will introduce himself shortly.",
+                "Evening. It's been quiet, so you're very welcome.",
+                "Oh good, someone new. Priya barely says a word."));
+
+        l.put(TableEvent.DEALER_WEAK_CARD, List.of(
+                "Ooh. That's a poor card for them.",
+                "A six showing. They won't enjoy that.",
+                "Look at that. The dealer's in a spot of bother.",
+                "That's the up-card you want to see, apparently.",
+                "Mm. They'll have to draw to that.",
+                "A weak one. Even I know that much."));
+
+        l.put(TableEvent.FIVE_CARD_HAND, List.of(
+                "Goodness. Five cards and still standing.",
+                "That's quite the collection you've built.",
+                "Five of them. You're being thorough.",
+                "My word. That hand has a cast of characters.",
+                "Still going. I admire the persistence.",
+                "Five cards. In my day that won you something."));
+
+        l.put(TableEvent.TWENTY_ONE, List.of(
+                "Twenty-one, the long way round.",
+                "Ooh, got there in the end.",
+                "That's twenty-one, and you had to work for it.",
+                "Well now. Assembled rather than dealt.",
+                "Very nicely built, that.",
+                "Twenty-one. Not the glamorous sort, but it counts."));
+
+        l.put(TableEvent.CLOSE_CALL, List.of(
+                "Oh, by one. That's the cruel way.",
+                "One point. Honestly.",
+                "Beaten by a single card. Infuriating.",
+                "That's the sort of loss you remember.",
+                "So close it's almost rude.",
+                "One. Just the one. Dear me."));
+
+        l.put(TableEvent.BIG_WIN, List.of(
+                "Oh, that's a proper one.",
+                "Well now. That's a handsome pile.",
+                "Goodness. That's the evening paid for.",
+                "That's a lovely lump of chips, dear.",
+                "My word. Very good indeed.",
+                "That one you'll be telling people about."));
+
+        l.put(TableEvent.DOUBLE_WIN, List.of(
+                "Doubled and won. Very satisfying.",
+                "Ha. That gamble paid you properly.",
+                "Oh, well done. That was the moment for it.",
+                "Doubled home. Lovely.",
+                "That's the one card doing its job.",
+                "Mm. Nerve rewarded, for once."));
+
+        l.put(TableEvent.LONG_SESSION, List.of(
+                "We've been here a while now, haven't we.",
+                "Is that the time? Goodness.",
+                "You've had a proper innings tonight.",
+                "I've had three teas since you sat down.",
+                "Long old session, this.",
+                "The lights do start to blur after a while."));
+
+        l.put(TableEvent.RUNNING_WELL, List.of(
+                "You're up nicely, you know.",
+                "That stack's grown since you arrived.",
+                "Well now. Look at you doing well.",
+                "You're ahead. That's a nice place to be.",
+                "Mm. Comfortably up.",
+                "You've made a decent evening of this."));
+
         return new Persona("marge", "Marge", SEAT_LEFT, 0.40, l);
     }
 
@@ -368,6 +441,79 @@ public final class Personas {
                 "Not much left there, kid. Have a think.",
                 "I've walked away from worse and never regretted it."));
 
+
+        l.put(TableEvent.SESSION_START, List.of(
+                "Ay up! New blood.",
+                "Evening, kid. Sit yourself down.",
+                "Ha! Room for one more. Always is.",
+                "Welcome, welcome. Mind Marge, she's sharper than she looks.",
+                "New face. Good. This table needed one.",
+                "Evening! Right, now we'll see something."));
+
+        l.put(TableEvent.DEALER_WEAK_CARD, List.of(
+                "Ohh, look at that up-card. Lovely.",
+                "Six showing! They hate a six.",
+                "That's a bust card if ever I saw one.",
+                "Ha! Dealer's got rubbish there.",
+                "Weak card up. Now we're talking.",
+                "Ooh, they're in trouble with that one."));
+
+        l.put(TableEvent.FIVE_CARD_HAND, List.of(
+                "Five cards! Would you look at that.",
+                "Ha! You've got a whole hand of 'em.",
+                "Five and still alive. Beautiful.",
+                "That's a proper battle, that is.",
+                "Ohh, you've built something there.",
+                "Five cards. Used to pay extra for that, some places."));
+
+        l.put(TableEvent.TWENTY_ONE, List.of(
+                "Twenty-one! Built it yourself, too.",
+                "Ha! Got there the hard way.",
+                "That's twenty-one, and no help from the deal.",
+                "Ohh, lovely. Card by card.",
+                "Twenty-one on the nose. Grand.",
+                "You earned that one, kid."));
+
+        l.put(TableEvent.CLOSE_CALL, List.of(
+                "ONE! One rotten point!",
+                "Argh. By a single card.",
+                "That's daylight robbery, that is.",
+                "One point. I've never got over losing one like that.",
+                "Ohh, that's a sore one.",
+                "Beaten by one. I need a minute."));
+
+        l.put(TableEvent.BIG_WIN, List.of(
+                "HA! Now that's a payday.",
+                "Ohh, look at that pile.",
+                "That's a proper win, kid.",
+                "Beautiful. Absolutely beautiful.",
+                "That's the biggest thing I've seen all night.",
+                "Ha ha! Now we're cooking."));
+
+        l.put(TableEvent.DOUBLE_WIN, List.of(
+                "YES! Doubled and home!",
+                "Ha! That's how you double.",
+                "Ohh, that's the sweetest one there is.",
+                "Doubled it and got there. Beautiful.",
+                "That's nerve paying out, that is.",
+                "Ha! Two chips out, four back."));
+
+        l.put(TableEvent.LONG_SESSION, List.of(
+                "We've been at this a fair while, kid.",
+                "My back's telling me the time.",
+                "Long night. Best kind, mind.",
+                "I've been on this stool since the shift before last.",
+                "Ohh, we've put a shift in tonight.",
+                "Time goes funny in here, doesn't it."));
+
+        l.put(TableEvent.RUNNING_WELL, List.of(
+                "You're well up, kid.",
+                "Ha! That stack's twice what you sat down with.",
+                "Look at that. You're having a night.",
+                "You're ahead of the game, and that's rare.",
+                "Ohh, somebody's doing alright.",
+                "That's a healthy looking pile, that is."));
+
         return new Persona("dutch", "Dutch", SEAT_RIGHT, 0.50, l);
     }
 
@@ -515,6 +661,79 @@ public final class Personas {
                 "The stack's nearly gone. That's worth acting on.",
                 "A good moment to remember what you walked in with.",
                 "Nearly out. No single hand fixes that."));
+
+
+        l.put(TableEvent.SESSION_START, List.of(
+                "Evening.",
+                "Hello. Dutch talks. You'll adjust.",
+                "Evening. Fair warning: he has a system.",
+                "Hi. Best seat's the one you're in.",
+                "Evening. It's a decent shoe so far.",
+                "Hello. I mostly read, but I'm listening."));
+
+        l.put(TableEvent.DEALER_WEAK_CARD, List.of(
+                "Four, five or six. Those bust most often.",
+                "That's their worst up-card. Roughly two in five.",
+                "Weak card. It's the one time the rules hurt them.",
+                "They have to draw to that. That's the whole edge.",
+                "Mm. Statistically their least favourite hand.",
+                "That up-card is worth more to you than it looks."));
+
+        l.put(TableEvent.FIVE_CARD_HAND, List.of(
+                "Five cards under twenty-two. That's uncommon.",
+                "Mm. Long hand. Nicely judged.",
+                "Five and standing. You made every one of those calls.",
+                "That's a lot of correct decisions in a row.",
+                "Rare, that. Enjoy it.",
+                "Five cards. Some houses pay a bonus for that."));
+
+        l.put(TableEvent.TWENTY_ONE, List.of(
+                "Twenty-one, assembled. Pays even money, sadly.",
+                "Same total as a natural, half the payout. Odd rule.",
+                "Mm. Twenty-one is twenty-one, mostly.",
+                "Built it. That takes more skill than being dealt it.",
+                "Perfect total. Shame about the rate.",
+                "Twenty-one the hard way. More impressive, worth less."));
+
+        l.put(TableEvent.CLOSE_CALL, List.of(
+                "One point. The margin doesn't change the loss.",
+                "Beaten by one. Costs the same as beaten by ten.",
+                "Mm. Painful, but not different.",
+                "A point is a point. It only feels closer.",
+                "Losing narrowly is just losing with extra annoyance.",
+                "One card between those hands. That's the game."));
+
+        l.put(TableEvent.BIG_WIN, List.of(
+                "That's a good one.",
+                "Mm. Substantial.",
+                "That's several hands' worth in one go.",
+                "Nicely done. That one mattered.",
+                "Good result. Genuinely.",
+                "That's the kind that changes an evening."));
+
+        l.put(TableEvent.DOUBLE_WIN, List.of(
+                "Doubled and won. That's where the edge lives.",
+                "Correct double, correct result. Both, this time.",
+                "Mm. That's the option paying for itself.",
+                "That's why the double exists.",
+                "Good. Right spot, right card.",
+                "Doubled home. That's the best return on the board."));
+
+        l.put(TableEvent.LONG_SESSION, List.of(
+                "You've been here a while. Worth noticing.",
+                "Long session. Time moves strangely with no windows.",
+                "Mm. I've finished a chapter and started another.",
+                "That's a good stretch of hands now.",
+                "Sessions get long in here without announcing it.",
+                "You've played a lot tonight. Just so you know."));
+
+        l.put(TableEvent.RUNNING_WELL, List.of(
+                "You're up. That's genuinely uncommon.",
+                "Ahead of where you started. Most people aren't.",
+                "Mm. Good position.",
+                "You're winning. The house is not enjoying it.",
+                "That's a real profit, not a swing.",
+                "Up on the session. Worth knowing where you are."));
 
         return new Persona("priya", "Priya", SEAT_FAR, 0.28, l);
     }

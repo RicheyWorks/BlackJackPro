@@ -178,6 +178,9 @@ public final class BlackJackProApp extends JFrame {
         setSize(1200, 820);
         setLocationRelativeTo(null);
         updateUi("Place your bet to begin.");
+        // Greet after the window is up, so the bubble isn't drawn into a frame
+        // that hasn't been shown yet.
+        SwingUtilities.invokeLater(() -> say(TableEvent.SESSION_START));
 
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { shutdownAll(); }
@@ -522,6 +525,8 @@ public final class BlackJackProApp extends JFrame {
             sfx.cardSnap();
             postAction();
             if (engine.phase() == Phase.INSURANCE) say(TableEvent.INSURANCE_OFFERED);
+            else if (engine.phase() == Phase.PLAYER && dealerShowsWeakCard())
+                say(TableEvent.DEALER_WEAK_CARD);
         } catch (RuntimeException ex) {
             flash("Place a bet first.");
         }
@@ -627,8 +632,27 @@ public final class BlackJackProApp extends JFrame {
      */
     private TableEvent mostNotable(List<Outcome> outcomes, boolean playerWon, boolean playerLost) {
         if (outcomes.contains(Outcome.BLACKJACK))     return TableEvent.PLAYER_BLACKJACK;
+
+        // Rarities first: these are the things a table actually turns to look at,
+        // and they'd never be heard if the ordinary win/loss outranked them.
+        if (playerWon && engine.hands().stream().anyMatch(h -> h.size() >= 5))
+            return TableEvent.FIVE_CARD_HAND;
+        if (playerWon && engine.hands().stream().anyMatch(h -> h.doubled()))
+            return TableEvent.DOUBLE_WIN;
+        if (engine.lastNet() >= Math.max(100, engine.bankroll() / 4))
+            return TableEvent.BIG_WIN;
+        if (playerWon && engine.hands().stream()
+                .anyMatch(h -> h.value() == 21 && h.size() >= 3))
+            return TableEvent.TWENTY_ONE;
+
         if (engine.dealer().isBust() && playerWon)    return TableEvent.DEALER_BUST;
         if (engine.dealer().isBlackjack())            return TableEvent.DEALER_BLACKJACK;
+
+        // Losing by exactly one point stings more than losing badly, so it gets
+        // its own reaction rather than disappearing into PLAYER_LOSS.
+        if (playerLost && !outcomes.contains(Outcome.BUST) && isCloseCall())
+            return TableEvent.CLOSE_CALL;
+
         if (outcomes.contains(Outcome.BUST))          return TableEvent.PLAYER_BUST;
         if (outcomes.contains(Outcome.SURRENDER))     return TableEvent.PLAYER_SURRENDER;
 
@@ -638,9 +662,31 @@ public final class BlackJackProApp extends JFrame {
         if (lossStreak >= 3) return TableEvent.COLD_STREAK;
 
         if (engine.bankroll() > 0 && engine.bankroll() <= 100) return TableEvent.LOW_CHIPS;
+        if (engine.stats().hands >= 60 && engine.stats().hands % 25 == 0)
+            return TableEvent.LONG_SESSION;
+        if (engine.bankroll() >= 2000) return TableEvent.RUNNING_WELL;
+
         if (playerWon)  return TableEvent.PLAYER_WIN;
         if (playerLost) return TableEvent.PLAYER_LOSS;
         return TableEvent.PUSH;
+    }
+
+    /** True when a surviving hand lost to the dealer by exactly one point. */
+    private boolean isCloseCall() {
+        int dv = engine.dealer().value();
+        if (dv > 21) return false;
+        return engine.hands().stream()
+                .anyMatch(h -> !h.isBust() && !h.surrendered() && dv - h.value() == 1);
+    }
+
+    /**
+     * Dealer showing 4, 5, or 6 — the up-cards that bust them most often, and
+     * the thing a real table always remarks on.
+     */
+    private boolean dealerShowsWeakCard() {
+        if (engine.dealer().isEmpty()) return false;
+        int up = engine.dealer().first().rank().value();
+        return up >= 4 && up <= 6;
     }
 
     /** Offer an event to the table and repaint if anybody took it up. */

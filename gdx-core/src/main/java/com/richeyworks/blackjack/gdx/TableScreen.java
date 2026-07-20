@@ -62,6 +62,7 @@ public final class TableScreen extends InputAdapter implements Screen {
     /** Consecutive losing rounds, the mirror of winStreak. */
     private int lossStreak;
     private int lastShoeSeen;
+    private boolean greeted;
 
     private final OrthographicCamera camera = new OrthographicCamera();
     private final Viewport           viewport = new FitViewport(WORLD_W, WORLD_H, camera);
@@ -175,6 +176,8 @@ public final class TableScreen extends InputAdapter implements Screen {
         if (engine.shoe().remaining() > lastShoeSeen) say(TableEvent.SHUFFLE);
         lastShoeSeen = engine.shoe().remaining();
         if (engine.phase() == Phase.INSURANCE) say(TableEvent.INSURANCE_OFFERED);
+        else if (engine.phase() == Phase.PLAYER && dealerShowsWeakCard())
+            say(TableEvent.DEALER_WEAK_CARD);
         if (engine.phase() == Phase.BETTING && engine.stats().hands > processedHands) {
             processedHands = engine.stats().hands;
             onRoundComplete();
@@ -193,16 +196,47 @@ public final class TableScreen extends InputAdapter implements Screen {
      */
     private TableEvent mostNotable(List<Outcome> outcomes, boolean won, boolean lost) {
         if (outcomes.contains(Outcome.BLACKJACK))  return TableEvent.PLAYER_BLACKJACK;
+
+        // Rarities first, or they would never be heard over an ordinary result.
+        if (won && engine.hands().stream().anyMatch(h -> h.size() >= 5))
+            return TableEvent.FIVE_CARD_HAND;
+        if (won && engine.hands().stream().anyMatch(Hand::doubled))
+            return TableEvent.DOUBLE_WIN;
+        if (engine.lastNet() >= Math.max(100, engine.bankroll() / 4))
+            return TableEvent.BIG_WIN;
+        if (won && engine.hands().stream().anyMatch(h -> h.value() == 21 && h.size() >= 3))
+            return TableEvent.TWENTY_ONE;
+
         if (engine.dealer().isBust() && won)       return TableEvent.DEALER_BUST;
         if (engine.dealer().isBlackjack())         return TableEvent.DEALER_BLACKJACK;
+        if (lost && !outcomes.contains(Outcome.BUST) && isCloseCall())
+            return TableEvent.CLOSE_CALL;
         if (outcomes.contains(Outcome.BUST))       return TableEvent.PLAYER_BUST;
         if (outcomes.contains(Outcome.SURRENDER))  return TableEvent.PLAYER_SURRENDER;
         if (winStreak  >= 3)                       return TableEvent.HOT_STREAK;
         if (lossStreak >= 3)                       return TableEvent.COLD_STREAK;
         if (engine.bankroll() > 0 && engine.bankroll() <= 100) return TableEvent.LOW_CHIPS;
+        if (engine.stats().hands >= 60 && engine.stats().hands % 25 == 0)
+            return TableEvent.LONG_SESSION;
+        if (engine.bankroll() >= 2000) return TableEvent.RUNNING_WELL;
         if (won)  return TableEvent.PLAYER_WIN;
         if (lost) return TableEvent.PLAYER_LOSS;
         return TableEvent.PUSH;
+    }
+
+    /** A surviving hand lost to the dealer by exactly one point. */
+    private boolean isCloseCall() {
+        int dv = engine.dealer().value();
+        if (dv > 21) return false;
+        return engine.hands().stream()
+                .anyMatch(h -> !h.isBust() && !h.surrendered() && dv - h.value() == 1);
+    }
+
+    /** Dealer showing 4, 5, or 6 -- the up-cards that bust them most often. */
+    private boolean dealerShowsWeakCard() {
+        if (engine.dealer().isEmpty()) return false;
+        int up = engine.dealer().first().rank().value();
+        return up >= 4 && up <= 6;
     }
 
     private void onRoundComplete() {
@@ -480,7 +514,10 @@ public final class TableScreen extends InputAdapter implements Screen {
      * {@link MenuScreen} has to restore this screen's processor, and a
      * constructor only runs once.
      */
-    @Override public void show()     { Gdx.input.setInputProcessor(this); }
+    @Override public void show() {
+        Gdx.input.setInputProcessor(this);
+        if (!greeted) { greeted = true; say(TableEvent.SESSION_START); }
+    }
 
     @Override public void resume()   { }
 

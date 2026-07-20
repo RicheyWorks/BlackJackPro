@@ -20,14 +20,19 @@ public final class BuiltinPlugin implements BlackJackPlugin {
     private static final PluginManifest MANIFEST = new PluginManifest(
             "com.richeyworks.blackjack.builtin",
             "Built-in Pack",
-            "0.2.0",
+            "0.3.0",
             "RicheyWorks",
-            "Ships a bonus theme, a counting AI, and the 21+3 side bet."
+            "Six table themes, a counting AI, and the 21+3 side bet."
     );
 
     @Override public PluginManifest manifest() { return MANIFEST; }
 
-    @Override public List<TableTheme> themes() { return List.of(new NeonTheme()); }
+    @Override public List<TableTheme> themes() {
+        List<TableTheme> out = new java.util.ArrayList<>();
+        out.add(new NeonTheme());          // hand-rendered; its scanlines don't fit a palette
+        out.addAll(BuiltinThemes.all());   // palette-driven
+        return List.copyOf(out);
+    }
     @Override public List<AiPlugin>   aiStrategies() { return List.of(new HiLoCounterAi()); }
     @Override public List<SideBet>    sideBets()     { return List.of(new TwentyOnePlusThree()); }
 }
