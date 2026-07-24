@@ -90,4 +90,64 @@ class DefaultComplianceGateTest {
         g.authorize(new Action(verifiedIn("TX"), Action.Type.WAGER, Asset.USD, 100));
         assertEquals(2, count[0]);
     }
+
+    // --- PL-13: audit-sink failure ------------------------------------------------
+
+    /** A sink that is down: every write fails. */
+    private static final AuditLog BROKEN =
+            (a, d) -> { throw new IllegalStateException("audit store unreachable"); };
+
+    /**
+     * Before the fix, a failing sink threw out of {@code authorize} and produced no
+     * {@link Decision} at all — so whether that ended up fail-open or fail-closed was
+     * decided by whatever the caller did with the exception. A fail-closed gate cannot
+     * leave that to the caller.
+     */
+    @Test
+    void anUnavailableAuditSinkDeniesInsteadOfThrowing() {
+        var g = new DefaultComplianceGate(LicensingPolicy.usDefault(), BROKEN);
+        Decision d = g.authorize(new Action(verifiedIn("NJ"), Action.Type.WAGER, Asset.USD, 100));
+        assertFalse(d.allowed(), "unlogged action was authorized");
+        assertEquals(DenialReason.AUDIT_UNAVAILABLE, d.reason());
+    }
+
+    /**
+     * The trade-off, stated as a test so it is a decision rather than an accident: an
+     * audit outage stops play. It must never do the reverse and permit play that no
+     * one can evidence.
+     */
+    @Test
+    void anUnavailableAuditSinkNeverTurnsADenialIntoAnAllow() {
+        var g = new DefaultComplianceGate(LicensingPolicy.usDefault(), BROKEN);
+        for (Action a : new Action[]{
+                new Action(verifiedIn("TX"), Action.Type.WAGER, Asset.USD, 100),        // unlicensed
+                new Action(verifiedIn("NJ"), Action.Type.WITHDRAWAL, Asset.USD, 100),   // otherwise fine
+                new Action(null, Action.Type.DEPOSIT, Asset.USD, 100)}) {
+            assertFalse(g.authorize(a).allowed());
+        }
+    }
+
+    /**
+     * {@code action} is null exactly when the request was malformed — the moment the log
+     * matters most. A sink that rejects null (most will, unguarded) previously turned
+     * that into an NPE escaping the gate; now it is a denial like any other sink failure.
+     */
+    @Test
+    void aSinkThatRejectsNullActionsStillYieldsADecision() {
+        AuditLog npeOnNull = (a, d) -> a.type();   // NPEs when the action is null
+        var g = new DefaultComplianceGate(LicensingPolicy.usDefault(), npeOnNull);
+        Decision d = g.authorize(null);
+        assertFalse(d.allowed());
+        assertEquals(DenialReason.AUDIT_UNAVAILABLE, d.reason());
+    }
+
+    /** A healthy sink is handed the null action rather than being skipped. */
+    @Test
+    void aNullActionIsStillOfferedToTheAuditLog() {
+        int[] count = {0};
+        var g = new DefaultComplianceGate(LicensingPolicy.usDefault(), (a, d) -> count[0]++);
+        Decision d = g.authorize(null);
+        assertEquals(1, count[0], "the malformed request went unlogged");
+        assertEquals(DenialReason.KYC_NOT_VERIFIED, d.reason());
+    }
 }

@@ -9,7 +9,9 @@ import java.util.Objects;
  * <p>Checks run in a fixed order; the FIRST failing check denies. Anything unknown or
  * uncertain — a null action/player, a null or blank located state — denies. Every
  * decision is written to the {@link AuditLog} before it is returned: there is no path
- * that returns without auditing, and no bypass of the checks.
+ * that returns without auditing, and no bypass of the checks. If the audit sink itself
+ * fails, the decision is replaced by a denial
+ * ({@link ComplianceGate.DenialReason#AUDIT_UNAVAILABLE}) rather than returned unlogged.
  *
  * <p>Scope note: deposit/loss/session limits that depend on running history and FX live
  * in the responsible-gambling ledger and are out of scope for this snapshot-only gate.
@@ -28,7 +30,23 @@ public final class DefaultComplianceGate implements ComplianceGate {
     @Override
     public Decision authorize(Action action) {
         Decision decision = evaluate(action);
-        audit.record(action, decision);
+        try {
+            audit.record(action, decision);
+        } catch (RuntimeException auditUnavailable) {
+            // "Every decision is audited" is a regulatory claim, not a best effort. A
+            // decision we could not record is one we are not entitled to act on, so an
+            // unavailable sink denies rather than propagating — a caller that catches
+            // broadly, or one that treats an exception as "try again", would otherwise
+            // decide the fail-open/fail-closed question by accident.
+            //
+            // The trade-off is deliberate and one-directional: an audit outage stops
+            // play. It never permits unlogged play.
+            //
+            // Note this also swallows the underlying reason when the decision was
+            // already a denial. That is the honest report: we cannot show the reason
+            // was recorded, so AUDIT_UNAVAILABLE is the only claim we can stand behind.
+            return Decision.deny(DenialReason.AUDIT_UNAVAILABLE);
+        }
         return decision;
     }
 

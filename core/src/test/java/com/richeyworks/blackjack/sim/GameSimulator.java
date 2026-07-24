@@ -2,11 +2,15 @@ package com.richeyworks.blackjack.sim;
 
 import com.richeyworks.blackjack.engine.*;
 import com.richeyworks.blackjack.media.GameSounds;
+import com.richeyworks.blackjack.persist.SaveManager;
 import com.richeyworks.blackjack.sidebet.SideBetManager;
 import com.richeyworks.blackjack.sidebet.TwentyOnePlusThree;
 import com.richeyworks.blackjack.strategy.HiLoCounter;
 import com.richeyworks.blackjack.table.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -49,9 +53,12 @@ public final class GameSimulator {
         public final EnumSet<TableEvent> events   = EnumSet.noneOf(TableEvent.class);
         public final Set<String> actions   = new TreeSet<>();
         public final Set<String> sideBets  = new TreeSet<>();
+        /** Which chatter casts got seated, so a broken cast can't hide. */
+        public final Set<String> casts     = new TreeSet<>();
         public int hands, rounds, reshuffles, splits, doubles, surrenders,
                    insuranceTaken, insuranceDeclined, maxHandsInRound, maxCardsInHand,
-                   remarks, legalityChecks, queryCalls;
+                   remarks, legalityChecks, queryCalls,
+                   saveLoadChecks, strategyRounds, conservationChecks;
         public long biggestWin, biggestLoss;
     }
 
@@ -71,6 +78,10 @@ public final class GameSimulator {
     private final Coverage cov = new Coverage();
 
     private final int startBankroll;
+    private final int decks;
+    /** Every fifth seed plays basic strategy rather than random moves, so the
+     *  realistic lines (correct splits, deep DAS hands) get walked too. */
+    private final boolean strategist;
     private int round, lastShoe, observed, winStreak, lossStreak, processed;
     private long clock;
 
@@ -84,12 +95,19 @@ public final class GameSimulator {
         rules.lateSurrender    = rng.nextBoolean();
         rules.offerInsurance   = rng.nextBoolean();
         rules.doubleAfterSplit = rng.nextBoolean();
+        this.decks      = rules.decks;
+        this.strategist = seed % 5 == 2;
         // A third of runs play from a short stack. LOW_CHIPS and BIG_WIN are
         // both relative to the bankroll, so a fat one never reaches either --
         // and the low-money paths are exactly where affordability bugs live.
         this.startBankroll = (seed % 3 == 0) ? 300 : 100_000;
         this.engine  = new Engine(startBankroll, new Random(seed ^ 0xC0FFEE), rules);
-        this.chatter = new TableChatter(Personas.defaults(), new Random(seed ^ 0xBEEF));
+        // Rotate through every shipped cast, not just the regulars: a blank
+        // line or a cast that never speaks is a bug wherever it is hiding.
+        List<List<Persona>> casts = Casts.all();
+        List<Persona> cast = casts.get((int) Math.floorMod(seed, casts.size()));
+        this.chatter = new TableChatter(cast, new Random(seed ^ 0xBEEF));
+        this.cov.casts.add(cast.get(0).id());
         this.lastShoe = engine.shoe().remaining();
     }
 
@@ -103,6 +121,15 @@ public final class GameSimulator {
             // allowed to sit low for a while rather than being refilled instantly.
             if (engine.bankroll() < 1) {
                 injected += startBankroll - engine.bankroll();   // tracked, not a win
+                engine.setBankroll(startBankroll);
+            } else if (engine.bankroll() > 10_000_000) {
+                // A monkey on a heater compounds geometrically -- a 400k-round
+                // soak reached $449M, and left alone the walk eventually
+                // pushes the int bankroll toward overflow, a state no human
+                // session can reach. Skim back down, accounted exactly like
+                // the top-up (injected goes negative), so the ledger identity
+                // keeps holding to the dollar.
+                injected += startBankroll - engine.bankroll();
                 engine.setBankroll(startBankroll);
             }
             playRound();
@@ -141,6 +168,7 @@ public final class GameSimulator {
 
         settleChecks(ownedBefore);
         checkAll("settled");
+        maybeSaveLoadRoundTrip();
     }
 
     private int pickBet() {
@@ -181,6 +209,13 @@ public final class GameSimulator {
 
     /** Take one legal action at random, weighted so every branch gets exercised. */
     private void act() {
+        if (strategist && engine.phase() == Phase.PLAYER) { actByTheBook(); return; }
+        if (strategist && engine.phase() == Phase.INSURANCE) {
+            // The book is unambiguous here: insurance is never taken.
+            engine.takeInsurance(false);
+            cov.insuranceDeclined++; cov.actions.add("decline");
+            return;
+        }
         List<Runnable> options = new ArrayList<>();
         if (engine.canHit())       options.add(() -> { engine.hit();  cov.actions.add("hit"); });
         if (engine.canStand())     options.add(() -> { engine.stand(); cov.actions.add("stand"); });
@@ -197,6 +232,47 @@ public final class GameSimulator {
                     "stuck in phase " + engine.phase() + " with no legal action");
         }
         options.get(rng.nextInt(options.size())).run();
+    }
+
+    /**
+     * Play the active hand exactly as basic strategy says to.
+     *
+     * <p>The monkey above reaches states no player would construct; this
+     * reaches the states every competent player constructs — correct doubles,
+     * resplits, surrender spots — which are exactly the lines the payout
+     * arithmetic gets exercised on hardest. It also makes the house-edge
+     * oracle possible: random play has no known expected value to check
+     * against, book play does.
+     */
+    private void actByTheBook() {
+        Hand h = engine.active();
+        BasicStrategy.Action a = BasicStrategy.recommend(h, engine.dealer().first());
+        switch (a) {
+            case R -> { if (engine.canSurrender()) { engine.surrender();
+                            cov.surrenders++; cov.actions.add("surrender"); return; } }
+            case P -> { if (engine.canSplit()) { engine.split();
+                            cov.splits++; cov.actions.add("split"); say(TableEvent.PLAYER_SPLIT); return; } }
+            case D -> { if (engine.canDouble()) { engine.doubleDown();
+                            cov.doubles++; cov.actions.add("double"); say(TableEvent.PLAYER_DOUBLE); return; } }
+            case S -> { engine.stand(); cov.actions.add("stand"); return; }
+            case H -> { engine.hit();   cov.actions.add("hit");   return; }
+        }
+        // The recommended action was unavailable (no funds, split cap, three
+        // cards). Fall back the way the book does: a refused surrender or
+        // double becomes a hit, a refused split plays as its total.
+        if (a == BasicStrategy.Action.P) { playPairAsTotal(h); return; }
+        if (engine.canHit()) { engine.hit(); cov.actions.add("hit"); }
+        else                 { engine.stand(); cov.actions.add("stand"); }
+    }
+
+    /** An unsplittable pair plays as a plain hard/soft total. */
+    private void playPairAsTotal(Hand h) {
+        int t = h.value(), dv = engine.dealer().first().rank().value();
+        boolean stand = !h.isSoft() && (t >= 17
+                || (t >= 13 && dv <= 6)
+                || (t == 12 && dv >= 4 && dv <= 6));
+        if (stand || !engine.canHit()) { engine.stand(); cov.actions.add("stand"); }
+        else                           { engine.hit();   cov.actions.add("hit");   }
     }
 
     /* ------------------------------------------------------------------ */
@@ -328,12 +404,79 @@ public final class GameSimulator {
         }
     }
 
+    /** Cards seen since the last reshuffle, keyed by identity. A seventh copy
+     *  of any card from a six-deck shoe is proof of a dealing bug. */
+    private final Map<String, Integer> seenSinceShuffle = new HashMap<>();
+    private int cardsSinceShuffle;
+
+    /**
+     * Conservation of cards, checked once per settled round — the only moment
+     * every card of the round is face up. Two properties: no card identity
+     * appears more often than the shoe holds copies of it, and cards seen plus
+     * cards still in the shoe account for the whole shoe exactly.
+     */
+    private void checkCardConservation() {
+        for (Hand h : engine.hands()) for (Card c : h.cards()) countCard(c);
+        for (Card c : engine.dealer().cards()) countCard(c);
+        int accounted = cardsSinceShuffle + engine.shoe().remaining();
+        if (accounted != decks * 52)
+            throw new SimFailure(seed, round, "card conservation: " + cardsSinceShuffle
+                    + " dealt + " + engine.shoe().remaining() + " in the shoe != " + decks * 52);
+        cov.conservationChecks++;
+    }
+
+    private void countCard(Card c) {
+        String key = c.rank() + " of " + c.suit();
+        int n = seenSinceShuffle.merge(key, 1, Integer::sum);
+        if (n > decks)
+            throw new SimFailure(seed, round,
+                    key + " appeared " + n + " times from a " + decks + "-deck shoe");
+        cardsSinceShuffle++;
+    }
+
+    /**
+     * Occasionally push the whole session through the save file and back, and
+     * insist nothing changed. This is the crash-recovery path — the one that
+     * runs precisely when something else has already gone wrong.
+     */
+    private void maybeSaveLoadRoundTrip() {
+        if (rng.nextInt(40) != 0) return;
+        cov.saveLoadChecks++;
+        try {
+            Path f = Files.createTempFile("bjsim", ".save");
+            try {
+                new SaveManager(f).save(engine);
+                Engine copy = new Engine(0, new Random(0));
+                new SaveManager(f).load(copy);
+                if (copy.bankroll() != engine.bankroll())
+                    throw new SimFailure(seed, round, "save/load bankroll drift: loaded "
+                            + copy.bankroll() + " but engine has " + engine.bankroll());
+                String want = statLine(engine.stats()), got = statLine(copy.stats());
+                if (!want.equals(got))
+                    throw new SimFailure(seed, round,
+                            "save/load stats drift: saved <" + want + "> loaded <" + got + ">");
+            } finally {
+                Files.deleteIfExists(f);
+            }
+        } catch (IOException e) {
+            throw new SimFailure(seed, round, "save/load I/O trouble: " + e);
+        }
+    }
+
+    private static String statLine(SessionStats s) {
+        return s.hands + "/" + s.wins + "/" + s.losses + "/" + s.pushes + "/"
+                + s.blackjacks + "/" + s.busts + "/" + s.doubles + "/" + s.splits + "/"
+                + s.surrenders + "/" + s.peakBankroll + "/" + s.totalWagered + "/" + s.totalReturned;
+    }
+
     /** Round-completion properties, checked once per settled round. */
     private void settleChecks(long ownedBefore) {
         if (engine.stats().hands <= processed) return;
         processed = engine.stats().hands;
         cov.rounds++;
         cov.hands = engine.stats().hands;
+        if (strategist) cov.strategyRounds++;
+        checkCardConservation();
 
         List<Outcome> outcomes = engine.lastOutcomes();
         if (outcomes.size() != engine.hands().size())
@@ -375,6 +518,7 @@ public final class GameSimulator {
     private void observeCards() {
         if (engine.shoe().remaining() > lastShoe) {
             counter.resetCount(); observed = 0; cov.reshuffles++;
+            seenSinceShuffle.clear(); cardsSinceShuffle = 0;
             say(TableEvent.SHUFFLE);
         }
         lastShoe = engine.shoe().remaining();
@@ -436,6 +580,67 @@ public final class GameSimulator {
     /* The non-engine surfaces                                            */
     /* ------------------------------------------------------------------ */
 
+    /**
+     * The statistical oracle: play flat-bet basic strategy for {@code rounds}
+     * rounds and return the house edge actually observed, as a fraction of
+     * money wagered (positive = the house kept it).
+     *
+     * <p>Every other check in this file verifies internal consistency — money
+     * in equals money out, queries match actions. None of them would notice a
+     * blackjack quietly paying 2:1, because the books would still balance.
+     * The known mathematics of the game notices: six-deck S17 DAS with late
+     * surrender has a house edge near half a percent, so a big flat-bet sample
+     * landing far outside that band means a payout or rules bug that is
+     * invisible to the ledger.
+     *
+     * <p>Rules are pinned to the ones {@link BasicStrategy} is written for
+     * (S17, late surrender, DAS), insurance is always declined, and the whole
+     * run is seeded — a failure reproduces exactly.
+     */
+    public static double houseEdge(long seed, int rounds) {
+        BlackjackRules rules = new BlackjackRules();
+        rules.dealerHitsSoft17 = false;
+        rules.lateSurrender    = true;
+        rules.doubleAfterSplit = true;
+        rules.offerInsurance   = true;
+
+        Engine e = new Engine(50_000_000, new Random(seed), rules);
+        for (int r = 0; r < rounds; r++) {
+            e.addBet(10);
+            e.deal();
+            int guard = 0;
+            while (e.phase() != Phase.BETTING && guard++ < 60) {
+                if (e.phase() == Phase.INSURANCE) { e.takeInsurance(false); continue; }
+                playHandByTheBook(e);
+            }
+            if (guard >= 60) throw new AssertionError("edge run: round " + r + " did not terminate");
+        }
+        SessionStats s = e.stats();
+        return (double) (s.totalWagered - s.totalReturned) / s.totalWagered;
+    }
+
+    /** One book action against {@code e}'s active hand. Static twin of {@link #actByTheBook()}. */
+    private static void playHandByTheBook(Engine e) {
+        Hand h = e.active();
+        BasicStrategy.Action a = BasicStrategy.recommend(h, e.dealer().first());
+        switch (a) {
+            case R -> { if (e.canSurrender()) { e.surrender(); return; } }
+            case P -> { if (e.canSplit())     { e.split();     return; } }
+            case D -> { if (e.canDouble())    { e.doubleDown();return; } }
+            case S -> { e.stand(); return; }
+            case H -> { e.hit();   return; }
+        }
+        if (a == BasicStrategy.Action.P) {
+            int t = h.value(), dv = e.dealer().first().rank().value();
+            boolean stand = !h.isSoft() && (t >= 17
+                    || (t >= 13 && dv <= 6)
+                    || (t == 12 && dv >= 4 && dv <= 6));
+            if (stand || !e.canHit()) e.stand(); else e.hit();
+            return;
+        }
+        if (e.canHit()) e.hit(); else e.stand();
+    }
+
     /** Exercise everything that isn't the engine: sounds, palettes, strategy advice. */
     public static void checkPeripherals() {
         for (GameSounds s : GameSounds.values()) {
@@ -488,16 +693,31 @@ public final class GameSimulator {
         System.out.printf("  most hands / cards %d / %d%n", total.maxHandsInRound, total.maxCardsInHand);
         System.out.printf("  biggest win/loss   $%,d / $%,d%n", total.biggestWin, total.biggestLoss);
         System.out.printf("  remarks            %,d%n", total.remarks);
+        System.out.printf("  save round-trips   %,d%n", total.saveLoadChecks);
+        System.out.printf("  conservation checks %,d%n", total.conservationChecks);
+        System.out.printf("  strategy rounds    %,d%n", total.strategyRounds);
         System.out.println();
         System.out.println("  outcomes   " + total.outcomes);
         System.out.println("  phases     " + total.phases);
         System.out.println("  actions    " + total.actions);
         System.out.println("  side bets  " + total.sideBets);
+        System.out.println("  casts      " + total.casts);
         System.out.println("  events     " + total.events.size() + "/" + TableEvent.values().length);
         System.out.println();
+
+        // The statistical oracle: a big flat-bet basic-strategy sample must
+        // land near the game's known house edge. Ledger checks can't see a
+        // mispriced payout; mathematics can.
+        int edgeRounds = Math.max(200_000, seeds * rounds / 2);
+        double edge = houseEdge(2026, edgeRounds);
+        System.out.printf("  house edge (book play, %,d rounds)  %.3f%%%n", edgeRounds, edge * 100);
+        boolean edgeSane = edge > -0.010 && edge < 0.020;
+        if (!edgeSane) System.out.printf("  HOUSE EDGE OUT OF RANGE: expected roughly 0.5%% ± noise%n");
+        System.out.println();
+
         List<String> gaps = gaps(total);
-        if (gaps.isEmpty()) {
-            System.out.println("  full coverage: every outcome, action and event reached");
+        if (gaps.isEmpty() && edgeSane) {
+            System.out.println("  full coverage: every outcome, action, event, cast and check reached");
         } else {
             gaps.forEach(g -> System.out.println("  NOT COVERED  " + g));
             System.exit(1);
@@ -538,16 +758,24 @@ public final class GameSimulator {
         if (c.reshuffles == 0) out.add("the shoe never reshuffled");
         if (c.maxHandsInRound < 3) out.add("never reached 3+ hands (max " + c.maxHandsInRound + ")");
         if (c.sideBets.size() < 3) out.add("side-bet tiers only " + c.sideBets);
+        if (c.casts.size() < Casts.all().size())
+            out.add("only " + c.casts.size() + "/" + Casts.all().size()
+                    + " chatter casts were seated: " + c.casts);
+        if (c.saveLoadChecks == 0)     out.add("the save file never round-tripped");
+        if (c.strategyRounds == 0)     out.add("the strategy bot never played a round");
+        if (c.conservationChecks == 0) out.add("card conservation was never checked");
         return out;
     }
 
     static void merge(Coverage a, Coverage b) {
         a.outcomes.addAll(b.outcomes); a.phases.addAll(b.phases); a.events.addAll(b.events);
-        a.actions.addAll(b.actions);   a.sideBets.addAll(b.sideBets);
+        a.actions.addAll(b.actions);   a.sideBets.addAll(b.sideBets); a.casts.addAll(b.casts);
         a.rounds += b.rounds; a.reshuffles += b.reshuffles; a.splits += b.splits;
         a.doubles += b.doubles; a.surrenders += b.surrenders;
         a.insuranceTaken += b.insuranceTaken; a.insuranceDeclined += b.insuranceDeclined;
         a.remarks += b.remarks; a.legalityChecks += b.legalityChecks; a.queryCalls += b.queryCalls;
+        a.saveLoadChecks += b.saveLoadChecks; a.strategyRounds += b.strategyRounds;
+        a.conservationChecks += b.conservationChecks;
         a.maxHandsInRound = Math.max(a.maxHandsInRound, b.maxHandsInRound);
         a.maxCardsInHand  = Math.max(a.maxCardsInHand,  b.maxCardsInHand);
         a.biggestWin  = Math.max(a.biggestWin,  b.biggestWin);

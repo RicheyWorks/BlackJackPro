@@ -51,16 +51,23 @@ class ChatterToneTest {
             Pattern.compile("\\bsure thing\\b"),
             Pattern.compile("\\bguaranteed\\b"));
 
+    /** Every persona the game ships, whichever table they sit at. */
+    private static List<Persona> everyone() {
+        List<Persona> out = new ArrayList<>();
+        for (List<Persona> cast : Casts.all()) out.addAll(cast);
+        return out;
+    }
+
     private static List<String> everyLine() {
         List<String> out = new ArrayList<>();
-        for (Persona p : Personas.defaults()) {
+        for (Persona p : everyone()) {
             for (TableEvent e : TableEvent.values()) out.addAll(p.linesFor(e));
         }
         return out;
     }
 
     @Test void noLineUrgesABiggerBetOrChasingALoss() {
-        for (Persona p : Personas.defaults()) {
+        for (Persona p : everyone()) {
             for (TableEvent e : TableEvent.values()) {
                 for (String line : p.linesFor(e)) {
                     String lower = line.toLowerCase(Locale.ROOT);
@@ -76,22 +83,25 @@ class ChatterToneTest {
 
     @Test void theTableGetsGentlerWhenChipsRunLow() {
         // The one moment where a real table would either go quiet or say
-        // something kind. Nothing here should read as excitement.
-        int covered = 0;
-        for (Persona p : Personas.defaults()) {
-            List<String> lines = p.linesFor(TableEvent.LOW_CHIPS);
-            if (lines.isEmpty()) continue;
-            covered++;
-            for (String line : lines) {
-                assertFalse(line.contains("!"),
-                        p.name() + " is excited about the player running out: \"" + line + "\"");
+        // something kind. Nothing here should read as excitement — and every
+        // cast owes the player this, not just the default regulars.
+        for (List<Persona> cast : Casts.all()) {
+            int covered = 0;
+            for (Persona p : cast) {
+                List<String> lines = p.linesFor(TableEvent.LOW_CHIPS);
+                if (lines.isEmpty()) continue;
+                covered++;
+                for (String line : lines) {
+                    assertFalse(line.contains("!"),
+                            p.name() + " is excited about the player running out: \"" + line + "\"");
+                }
             }
+            assertEquals(3, covered, "every persona should have something kind for LOW_CHIPS");
         }
-        assertEquals(3, covered, "every persona should have something kind for LOW_CHIPS");
     }
 
     @Test void aColdStreakIsNotCheeredOn() {
-        for (Persona p : Personas.defaults()) {
+        for (Persona p : everyone()) {
             for (String line : p.linesFor(TableEvent.COLD_STREAK)) {
                 assertFalse(line.contains("!"),
                         p.name() + " is excited about a losing run: \"" + line + "\"");
@@ -121,7 +131,7 @@ class ChatterToneTest {
     }
 
     @Test void everyReactionHasEnoughVarietyToNotFeelScripted() {
-        for (Persona p : Personas.defaults()) {
+        for (Persona p : everyone()) {
             for (TableEvent e : TableEvent.values()) {
                 List<String> lines = p.linesFor(e);
                 if (lines.isEmpty()) continue;
@@ -139,18 +149,24 @@ class ChatterToneTest {
         // a blackjack table are obliged to share those, so the test was
         // measuring the language and the subject rather than the voices. On
         // distinctive words the real figure is under 30%.
-        List<Persona> ps = Personas.defaults();
-        for (int i = 0; i < ps.size(); i++) {
-            for (int j = i + 1; j < ps.size(); j++) {
-                var a = distinctiveWords(ps.get(i));
-                var b = distinctiveWords(ps.get(j));
-                var shared = new java.util.HashSet<>(a);
-                shared.retainAll(b);
-                double overlap = (double) shared.size() / Math.min(a.size(), b.size());
-                assertTrue(overlap < 0.40,
-                        ps.get(i).name() + " and " + ps.get(j).name()
-                                + " share " + Math.round(overlap * 100)
-                                + "% of their distinctive vocabulary: " + shared);
+        //
+        // Compared within each cast only: pirates never sit with cowboys, so
+        // Captain Salt and Hank sharing "trail-worn" vocabulary would bother
+        // nobody -- what matters is that the three people actually at the
+        // table sound like three people.
+        for (List<Persona> ps : Casts.all()) {
+            for (int i = 0; i < ps.size(); i++) {
+                for (int j = i + 1; j < ps.size(); j++) {
+                    var a = distinctiveWords(ps.get(i));
+                    var b = distinctiveWords(ps.get(j));
+                    var shared = new java.util.HashSet<>(a);
+                    shared.retainAll(b);
+                    double overlap = (double) shared.size() / Math.min(a.size(), b.size());
+                    assertTrue(overlap < 0.40,
+                            ps.get(i).name() + " and " + ps.get(j).name()
+                                    + " share " + Math.round(overlap * 100)
+                                    + "% of their distinctive vocabulary: " + shared);
+                }
             }
         }
     }
@@ -158,15 +174,16 @@ class ChatterToneTest {
     @Test void eachCharacterKeepsWordsTheOthersNeverUse() {
         // The positive form of the same idea: a voice is what only that person
         // says. Losing this would mean the characters had merged even if the
-        // overlap percentage still looked acceptable.
-        List<Persona> ps = Personas.defaults();
-        for (Persona p : ps) {
-            var mine = distinctiveWords(p);
-            for (Persona other : ps) {
-                if (other != p) mine.removeAll(distinctiveWords(other));
+        // overlap percentage still looked acceptable. Within-cast, as above.
+        for (List<Persona> ps : Casts.all()) {
+            for (Persona p : ps) {
+                var mine = distinctiveWords(p);
+                for (Persona other : ps) {
+                    if (other != p) mine.removeAll(distinctiveWords(other));
+                }
+                assertTrue(mine.size() >= 60,
+                        p.name() + " only has " + mine.size() + " words nobody else uses");
             }
-            assertTrue(mine.size() >= 60,
-                    p.name() + " only has " + mine.size() + " words nobody else uses");
         }
     }
 

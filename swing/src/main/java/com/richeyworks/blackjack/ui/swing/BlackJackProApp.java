@@ -1,7 +1,6 @@
 package com.richeyworks.blackjack.ui.swing;
 
 import com.richeyworks.blackjack.achievement.AchievementService;
-import com.richeyworks.blackjack.engine.BasicStrategy;
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Outcome;
@@ -17,7 +16,6 @@ import com.richeyworks.blackjack.plugin.TableTheme;
 import com.richeyworks.blackjack.strategy.HiLoCounter;
 import com.richeyworks.blackjack.settings.GameSettings;
 import com.richeyworks.blackjack.steam.SteamBridge;
-import com.richeyworks.blackjack.table.Personas;
 import com.richeyworks.blackjack.table.TableChatter;
 import com.richeyworks.blackjack.table.TableEvent;
 
@@ -85,9 +83,13 @@ public final class BlackJackProApp extends JFrame {
     /** Single reusable timer behind {@link #flash(String)}. */
     private Timer flashTimer;
 
-    /** The characters at the table. They talk; they never play a hand. */
-    private final TableChatter chatter =
-            new TableChatter(Personas.defaults(), new java.util.Random());
+    /**
+     * The characters at the table. They talk; they never play a hand. Not
+     * final: the crewed themes (Pirate Cove, Dusty Saloon, Nebula) seat a
+     * different cast, so changing theme can change who is sitting here —
+     * see {@link com.richeyworks.blackjack.table.Casts}.
+     */
+    private TableChatter chatter;
     /** Repaints while a bubble is fading, since nothing else drives a frame. */
     private Timer chatterTimer;
     /** Consecutive losing rounds, the mirror of winStreak. */
@@ -98,7 +100,7 @@ public final class BlackJackProApp extends JFrame {
     private final JLabel betLabel  = new JLabel();
     private final JLabel shoeLabel = new JLabel();
 
-    private JButton bDeal, bHit, bStand, bDouble, bSplit, bSurrender, bHint;
+    private JButton bDeal, bHit, bStand, bDouble, bSplit, bSurrender;
     private JButton bIns, bNoIns;
     private JButton[] chipBtns;
     private JButton bSide, bClear;
@@ -148,6 +150,11 @@ public final class BlackJackProApp extends JFrame {
         // AI that happens to wrap it.
         this.counter = new HiLoCounter();
         this.lastShoeRemaining = engine.shoe().remaining();
+        // Seat the cast that matches the saved theme, so a player who left on
+        // Pirate Cove comes back to the same crew rather than the regulars.
+        this.chatter = new TableChatter(
+                com.richeyworks.blackjack.table.Casts.forPalette(theme.id()),
+                new java.util.Random());
 
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         save.load(engine);
@@ -287,7 +294,6 @@ public final class BlackJackProApp extends JFrame {
         bDouble     = pirateButton("Double");
         bSplit      = pirateButton("Split");
         bSurrender  = pirateButton("Surrender");
-        bHint       = pirateButton("Hint");
         bIns        = pirateButton("Insure");
         bNoIns      = pirateButton("Decline");
 
@@ -299,7 +305,6 @@ public final class BlackJackProApp extends JFrame {
         bSplit.addActionListener(e -> safe(() -> { engine.split(); say(TableEvent.PLAYER_SPLIT); },
                 "Cannot split."));
         bSurrender.addActionListener(e -> safe(engine::surrender, null));
-        bHint.addActionListener(e -> showHint());
         bIns.addActionListener(e -> takeInsurance(true));
         bNoIns.addActionListener(e -> takeInsurance(false));
 
@@ -307,7 +312,7 @@ public final class BlackJackProApp extends JFrame {
         actions.setOpaque(false);
         actions.add(bDeal); actions.add(bHit); actions.add(bStand);
         actions.add(bDouble); actions.add(bSplit); actions.add(bSurrender);
-        actions.add(bIns); actions.add(bNoIns); actions.add(bHint);
+        actions.add(bIns); actions.add(bNoIns);
 
         c.gridx = 0; c.gridy = 1; c.gridwidth = CHIP_VALUES.length + 1;
         c.anchor = GridBagConstraints.CENTER;
@@ -374,8 +379,15 @@ public final class BlackJackProApp extends JFrame {
         opts.addSeparator(); opts.add(mute); opts.add(nextTrack);
 
         JMenu themeMenu = new JMenu("Theme");
-        addThemeItem(themeMenu, theme); // Classic always present
-        for (TableTheme t : plugins.themes()) addThemeItem(themeMenu, t);
+        JMenuItem gallery = new JMenuItem("Theme Gallery…");
+        gallery.addActionListener(e ->
+                new ThemeGalleryDialog(this, allThemes(), theme.id(), this::applyTheme)
+                        .setVisible(true));
+        themeMenu.add(gallery);
+        themeMenu.addSeparator();
+        // Every theme seats a matching cast now, so there is no "crewed"
+        // subset worth separating — the gallery's badges name each crew.
+        for (TableTheme t : allThemes()) addThemeItem(themeMenu, t);
 
         JMenu extras = new JMenu("Extras");
         JMenuItem achievementsItem = new JMenuItem("Achievements…");
@@ -410,17 +422,44 @@ public final class BlackJackProApp extends JFrame {
 
     private void addThemeItem(JMenu menu, TableTheme t) {
         JMenuItem item = new JMenuItem(t.displayName());
-        item.addActionListener(e -> {
-            this.theme = t;
-            table.setTheme(t);
-            // Persist by stable id, not display name: launch() looks the theme
-            // back up by id, and renaming a theme in the UI should not silently
-            // reset the player's choice.
-            settings.themeId = t.id();
-            settings.save();
-            repaint();
-        });
+        item.addActionListener(e -> applyTheme(t));
         menu.add(item);
+    }
+
+    /**
+     * Every theme available right now, deduplicated by id: Classic, the
+     * built-in pack, external plugins, and — belt and braces — whatever is
+     * currently applied, so an external theme still shows while its JAR is
+     * loaded even if the plugin list changed underneath it.
+     */
+    private java.util.List<TableTheme> allThemes() {
+        java.util.LinkedHashMap<String, TableTheme> byId = new java.util.LinkedHashMap<>();
+        TableTheme classic = new ClassicTheme();
+        byId.put(classic.id(), classic);
+        for (TableTheme t : plugins.themes()) byId.putIfAbsent(t.id(), t);
+        byId.putIfAbsent(theme.id(), theme);
+        return java.util.List.copyOf(byId.values());
+    }
+
+    /** Apply {@code t} everywhere a theme matters: felt, settings, and cast. */
+    private void applyTheme(TableTheme t) {
+        this.theme = t;
+        table.setTheme(t);
+        // Persist by stable id, not display name: launch() looks the theme
+        // back up by id, and renaming a theme in the UI should not silently
+        // reset the player's choice.
+        settings.themeId = t.id();
+        settings.save();
+        // A crewed theme seats its own characters. Only swap when the cast
+        // actually changes, so hopping between two plain-decor themes
+        // doesn't reset the regulars' conversation mid-flow.
+        java.util.List<com.richeyworks.blackjack.table.Persona> cast =
+                com.richeyworks.blackjack.table.Casts.forPalette(t.id());
+        if (!cast.get(0).id().equals(chatter.personas().get(0).id())) {
+            chatter = new TableChatter(cast, new java.util.Random());
+            table.setChatter(chatter);
+        }
+        repaint();
     }
 
     /**
@@ -774,19 +813,6 @@ public final class BlackJackProApp extends JFrame {
         return sb.toString().trim();
     }
 
-    private void showHint() {
-        if (engine.phase() != Phase.PLAYER) return;
-        var action = BasicStrategy.recommend(engine.active(), engine.dealer().first());
-        String advice = switch (action) {
-            case H -> "Basic strategy: HIT";
-            case S -> "Basic strategy: STAND";
-            case D -> engine.canDouble() ? "Basic strategy: DOUBLE (else hit)" : "Basic strategy: HIT";
-            case P -> engine.canSplit()  ? "Basic strategy: SPLIT" : "Basic strategy: HIT";
-            case R -> engine.canSurrender() ? "Basic strategy: SURRENDER (else hit)" : "Basic strategy: HIT";
-        };
-        JOptionPane.showMessageDialog(this, advice, "Hint", JOptionPane.INFORMATION_MESSAGE);
-    }
-
     private void showStats() {
         SessionStats s = engine.stats();
         String text = "Hands played: " + s.hands + "\n"
@@ -886,7 +912,6 @@ public final class BlackJackProApp extends JFrame {
         bSurrender.setEnabled(engine.canSurrender());
         bIns.setEnabled(engine.canInsure());
         bNoIns.setEnabled(insure);
-        bHint.setEnabled(playing);
         table.repaint();
     }
 

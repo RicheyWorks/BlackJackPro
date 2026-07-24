@@ -33,7 +33,15 @@ public final class TablePalette {
         /** Radiating chevrons from the centre. Art-deco. */
         CHEVRON,
         /** A single bordered panel. Minimal. */
-        PLAIN
+        PLAIN,
+        /** A lattice of small diamonds. Classic playing-card back. */
+        DIAMONDS,
+        /** Offset rows of dots. Playful; reads as pixels on the right theme. */
+        DOTS,
+        /** Stacked horizontal waves. Water, curtains, aurora. */
+        WAVES,
+        /** Rays from the centre. Loud on purpose. */
+        STARBURST
     }
 
     private final String    id;

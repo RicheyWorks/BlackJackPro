@@ -22,13 +22,25 @@ import static org.junit.jupiter.api.Assertions.*;
 class SimulationTest {
 
     @Test void aShortSoakFindsNothing() {
-        // Seeds 0-59 cover both bankroll sizes and every rule combination the
-        // simulator varies, since it derives the rules from the seed.
+        // Seeds 0-59 cover both bankroll sizes, every rule combination the
+        // simulator varies, all four chatter casts (seed mod 4), and the
+        // strategist seeds (seed mod 5 == 2), since all derive from the seed.
         for (long s = 0; s < 60; s++) {
             final long seed = s;
             assertDoesNotThrow(() -> new GameSimulator(seed).run(200),
                     "simulation failed at seed " + seed);
         }
+    }
+
+    @Test void bookPlayLandsOnTheKnownHouseEdge() {
+        // Every other check is internal consistency; this one is external
+        // truth. Six-deck S17 DAS with late surrender is a ~0.5% house game
+        // under basic strategy. A blackjack quietly paying 2:1, a double
+        // counted once but paid twice, a surrender refunding the full stake --
+        // all invisible to the ledger, all far outside this band.
+        double edge = GameSimulator.houseEdge(7, 150_000);
+        assertTrue(edge > -0.010 && edge < 0.020,
+                "book-play house edge was " + (edge * 100) + "%, expected ~0.5%");
     }
 
     @Test void aSoakReachesEveryOutcomeActionAndEvent() {

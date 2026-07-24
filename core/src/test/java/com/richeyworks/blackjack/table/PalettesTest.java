@@ -43,8 +43,8 @@ class PalettesTest {
         }
     }
 
-    @Test void thereAreSevenThemesOnEveryPlatform() {
-        assertEquals(7, Palettes.all().size());
+    @Test void thereAreTwentyFourThemesOnEveryPlatform() {
+        assertEquals(24, Palettes.all().size());
     }
 
     @Test void noTwoThemesLookAlike() {
@@ -82,11 +82,11 @@ class PalettesTest {
     }
 
     @Test void cardBacksAreDecoratedDistinctly() {
-        // Varying the back style is what stops seven recolours reading as one
-        // theme seven times, so at least three of the five should be in use.
+        // Varying the back style is what stops two dozen recolours reading as
+        // one theme two dozen times, so most of the nine should be in use.
         Set<TablePalette.BackStyle> used = new HashSet<>();
         for (TablePalette p : Palettes.all()) used.add(p.backStyle());
-        assertTrue(used.size() >= 3, "only " + used.size() + " distinct card-back styles");
+        assertTrue(used.size() >= 8, "only " + used.size() + " distinct card-back styles");
     }
 
     /* ---------- lookup ---------- */

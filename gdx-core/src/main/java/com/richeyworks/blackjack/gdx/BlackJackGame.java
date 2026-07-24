@@ -52,6 +52,8 @@ public final class BlackJackGame extends Game {
             session.settings().themeId = p.id();
             session.persist();
         }
+        // Crewed themes change who sits at the table, not just the felt.
+        if (table != null) table.seatCast(p.id());
     }
 
     @Override

@@ -221,9 +221,10 @@ public final class MenuScreen extends InputAdapter implements Screen {
             return;
         }
         if (r.action == Action.THEME) {
-            // Cycles rather than opening a list: seven themes is few enough
-            // that tapping through them is quicker than a submenu, and the
-            // change is visible behind this screen straight away.
+            // Cycles rather than opening a list. With two dozen themes that is
+            // a lot of taps, but each one applies instantly and visibly behind
+            // this screen, so browsing is fast; a grid picker like the
+            // desktop's Theme Gallery is the eventual answer here.
             game.setPalette(Palettes.next(game.palette().id()));
             notice = "Theme: " + game.palette().name() + " - saved";
             confirmingReset = false;

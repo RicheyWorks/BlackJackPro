@@ -37,6 +37,19 @@ public interface TableTheme {
     Color feltTop();
     Color feltBottom();
 
+    /**
+     * Decorate the felt itself, drawn above the gradient and beneath
+     * everything else — cards, chips, captions, and the table arc all paint
+     * over it, so it can afford to cover the whole surface as long as it
+     * stays quiet. Default is no decoration, which is what a plain casino
+     * felt looks like; the built-in palette themes draw their card-back
+     * motif here at large scale and low alpha so a theme reads as one
+     * pattern language from the felt to the cards.
+     *
+     * <p>Receives a scratch {@link Graphics2D} like every other paint method.
+     */
+    default void paintFeltDecor(Graphics2D g, int width, int height) {}
+
     /** Accent (table arc, decorative text). */
     default Color accent() { return new Color(0xC9A227); }
 
