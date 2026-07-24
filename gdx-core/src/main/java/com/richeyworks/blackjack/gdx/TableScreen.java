@@ -15,7 +15,6 @@ import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.richeyworks.blackjack.achievement.AchievementService;
-import com.richeyworks.blackjack.engine.BasicStrategy;
 import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Hand;
@@ -26,6 +25,8 @@ import com.richeyworks.blackjack.engine.SessionStats;
 import com.richeyworks.blackjack.sidebet.SideBetManager;
 import com.richeyworks.blackjack.sidebet.TwentyOnePlusThree;
 import com.richeyworks.blackjack.strategy.HiLoCounter;
+import com.richeyworks.blackjack.table.Casts;
+import com.richeyworks.blackjack.table.Persona;
 import com.richeyworks.blackjack.table.Personas;
 import com.richeyworks.blackjack.table.Remark;
 import com.richeyworks.blackjack.table.TableChatter;
@@ -38,7 +39,7 @@ import java.util.List;
  * Touch-friendly libGDX table that consumes the same {@link Engine} the Swing
  * version uses. Renders the felt, the dealer hand, every player hand, and a
  * bottom action bar with chip buttons (1/5/25/100/500) and gameplay buttons
- * (Deal, Hit, Stand, Double, Split, Surrender, Insure, Decline, Hint).
+ * (Deal, Hit, Stand, Double, Split, Surrender, Insure, Decline).
  *
  * Designed for landscape phone/tablet screens. Uses a {@link FitViewport} at
  * 1280×720 virtual resolution so the layout scales identically across devices.
@@ -59,8 +60,13 @@ public final class TableScreen extends InputAdapter implements Screen {
     /** Built on first use and reused, so returning keeps the hand in progress. */
     private MenuScreen menu;
 
-    /** The characters at the table. They talk; they never play a hand. */
-    private final TableChatter chatter =
+    /**
+     * The characters at the table. They talk; they never play a hand. Not
+     * final: the crewed themes (Pirate Cove, Dusty Saloon, Nebula) seat a
+     * different cast — see {@link Casts}. Seated in the constructor from the
+     * saved theme, reseated by {@link #seatCast(String)} when it changes.
+     */
+    private TableChatter chatter =
             new TableChatter(Personas.defaults(), new java.util.Random());
     /** Consecutive losing rounds, the mirror of winStreak. */
     private int lossStreak;
@@ -100,6 +106,7 @@ public final class TableScreen extends InputAdapter implements Screen {
         // progress on each launch.
         this.engine  = session.engine();
         this.processedHands = engine.stats().hands;
+        seatCast(session.settings().themeId);
         bigFont.getData().setScale(2f);
         buildButtons();
         statusText = engine.stats().hands > 0
@@ -153,8 +160,7 @@ public final class TableScreen extends InputAdapter implements Screen {
         buttons.add(action(530,       ay, 90, 50, "Surrender", () -> safe(engine::surrender,  null)));
         buttons.add(action(630,       ay, 90, 50, "Insure",    () -> safe(() -> engine.takeInsurance(true),  "Not insurance time.")));
         buttons.add(action(730,       ay, 90, 50, "Decline",   () -> safe(() -> engine.takeInsurance(false), "Not insurance time.")));
-        buttons.add(action(830,       ay, 90, 50, "Hint",      this::showHint));
-        buttons.add(action(930,       ay, 90, 50, "Menu",      this::openMenu));
+        buttons.add(action(830,       ay, 90, 50, "Menu",      this::openMenu));
     }
 
     /**
@@ -280,6 +286,18 @@ public final class TableScreen extends InputAdapter implements Screen {
     }
 
     /**
+     * Seat the cast that matches {@code paletteId}. Only rebuilds the chatter
+     * when the cast actually changes, so cycling between two plain-decor
+     * themes doesn't reset the regulars' conversation mid-flow.
+     */
+    void seatCast(String paletteId) {
+        List<Persona> cast = Casts.forPalette(paletteId);
+        if (!cast.get(0).id().equals(chatter.personas().get(0).id())) {
+            chatter = new TableChatter(cast, new java.util.Random());
+        }
+    }
+
+    /**
      * The single most remark-worthy thing about a finished round. One event
      * rather than several — the chatter paces remarks, so offering it five
      * things just means four get dropped in whatever order the code checked.
@@ -383,18 +401,6 @@ public final class TableScreen extends InputAdapter implements Screen {
         session.persist();
     }
 
-    private void showHint() {
-        if (engine.phase() != Phase.PLAYER) { flash("No hand to advise."); return; }
-        var action = BasicStrategy.recommend(engine.active(), engine.dealer().first());
-        switch (action) {
-            case H: statusText = "Basic strategy: HIT"; break;
-            case S: statusText = "Basic strategy: STAND"; break;
-            case D: statusText = "Basic strategy: DOUBLE (else hit)"; break;
-            case P: statusText = "Basic strategy: SPLIT"; break;
-            case R: statusText = "Basic strategy: SURRENDER (else hit)"; break;
-        }
-    }
-
     private void flash(String msg) { flashText = msg; flashUntil = System.currentTimeMillis() + 1500; }
 
     /* ---------- render loop ---------- */
@@ -462,10 +468,102 @@ public final class TableScreen extends InputAdapter implements Screen {
         font.setColor(pal().text);
     }
 
+    /**
+     * The felt, built up the way the desktop builds it: vertical gradient,
+     * the theme's card-back motif restated at large scale and low alpha,
+     * a soft vignette so the light sits over the middle of the table, then
+     * the accent arc. This used to be a flat {@code glClearColor} — half of
+     * every palette (the feltTop, the motif) was simply never shown on
+     * mobile.
+     */
     private void drawTable() {
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        // Corner order: bottom-left, bottom-right, top-right, top-left.
+        shapes.rect(0, 0, WORLD_W, WORLD_H,
+                pal().feltBottom, pal().feltBottom, pal().feltTop, pal().feltTop);
+        shapes.end();
+
+        drawFeltMotif();
+
+        // Vignette, approximated with two edge gradients: dark rising from
+        // the action bar, a lighter band falling from the top. Cheap, and it
+        // reads as overhead light without a shader.
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        Color dark  = new Color(0, 0, 0, 0.30f);
+        Color clear = new Color(0, 0, 0, 0f);
+        shapes.rect(0, 0, WORLD_W, WORLD_H * 0.28f, dark, dark, clear, clear);
+        shapes.rect(0, WORLD_H * 0.82f, WORLD_W, WORLD_H * 0.18f, clear, clear, dark, dark);
+        shapes.end();
+
         shapes.begin(ShapeRenderer.ShapeType.Line);
         shapes.setColor(pal().accent);
         shapes.arc(WORLD_W / 2, 0, 700, 0, 180);
+        shapes.end();
+    }
+
+    /** The theme's card-back motif across the felt, mirroring PaletteTheme. */
+    private void drawFeltMotif() {
+        Color c = pal().accent;
+        float w = WORLD_W, h = WORLD_H;
+        if (pal().backStyle() == com.richeyworks.blackjack.table.TablePalette.BackStyle.DOTS) {
+            shapes.begin(ShapeRenderer.ShapeType.Filled);
+            shapes.setColor(c.r, c.g, c.b, 0.07f);
+            for (int y = 34; y < h; y += 56) {
+                for (float x = ((y / 56) % 2 == 0) ? 34 : 62; x < w; x += 56) {
+                    shapes.circle(x, y, 3f);
+                }
+            }
+            shapes.end();
+            return;
+        }
+        shapes.begin(ShapeRenderer.ShapeType.Line);
+        shapes.setColor(c.r, c.g, c.b, 0.08f);
+        switch (pal().backStyle()) {
+            case HATCH -> {
+                for (float i = -h; i < w + h; i += 56) clippedLine(i, h, i - h, 0, 0, 0, w, h);
+            }
+            case RINGS -> {
+                float cx = w / 2, cy = h / 2;
+                for (float r = 90; r < w; r += 110) shapes.circle(cx, cy, r, 64);
+            }
+            case STRIPES -> {
+                for (float i = 44; i < w; i += 68) shapes.line(i, 0, i, h);
+            }
+            case CHEVRON -> {
+                float cx = w / 2;
+                for (float y = -w / 4; y < h + w / 4; y += 84) {
+                    clippedLine(cx, h - y, 0, h - (y + w / 4), 0, 0, w, h);
+                    clippedLine(cx, h - y, w, h - (y + w / 4), 0, 0, w, h);
+                }
+            }
+            case PLAIN -> shapes.rect(26, 26, w - 52, h - 52);
+            case DIAMONDS -> {
+                for (float i = -h; i < w + h; i += 84) {
+                    clippedLine(i, h, i - h, 0, 0, 0, w, h);
+                    clippedLine(i, h, i + h, 0, 0, 0, w, h);
+                }
+            }
+            case WAVES -> {
+                for (float y = 26; y < h + 20; y += 52) {
+                    for (float x = -12; x + 72 < w + 84; x += 72) {
+                        shapes.arc(x + 36, y, 36, 0, 180, 12);
+                    }
+                }
+            }
+            case STARBURST -> {
+                // Rays fan down from behind the dealer's end (top of screen).
+                float cx = w / 2, cy = h - 46;
+                float reach = Math.max(w, h) * 2;
+                for (int a = 195; a <= 345; a += 10) {
+                    double rad = Math.toRadians(a);
+                    clippedLine(cx, cy, cx + (float) Math.cos(rad) * reach,
+                                        cy + (float) Math.sin(rad) * reach, 0, 0, w, h);
+                }
+            }
+            case DOTS -> { /* handled above in the filled pass */ }
+        }
         shapes.end();
     }
 
@@ -549,18 +647,111 @@ public final class TableScreen extends InputAdapter implements Screen {
         }
     }
 
+    /**
+     * Card back drawn in the theme's own {@code BackStyle}, matching the
+     * desktop renderer pattern for pattern. This used to draw the same twelve
+     * horizontal lines for every theme, which made half the point of a theme
+     * invisible on mobile. {@code ShapeRenderer} has no clip, so the styles
+     * that run past the card edge (hatch, chevron, starburst) clip their own
+     * segments via {@link #clippedLine}.
+     */
     private void drawCardBack(float x, float y) {
+        float w = CARD_W, h = CARD_H;
         shapes.begin(ShapeRenderer.ShapeType.Filled);
         shapes.setColor(pal().backFill);
-        shapes.rect(x, y, CARD_W, CARD_H);
-        shapes.end();
-        shapes.begin(ShapeRenderer.ShapeType.Line);
-        shapes.setColor(pal().accent);
-        shapes.rect(x, y, CARD_W, CARD_H);
-        for (int i = 0; i < 12; i++) {
-            shapes.line(x, y + i * (CARD_H / 12), x + CARD_W, y + i * (CARD_H / 12));
+        shapes.rect(x, y, w, h);
+
+        // DOTS is the one filled pattern; draw it in the same filled pass.
+        if (pal().backStyle() == com.richeyworks.blackjack.table.TablePalette.BackStyle.DOTS) {
+            shapes.setColor(pal().backLine);
+            for (int j = 8; j < h; j += 13) {
+                for (float i = ((j / 13) % 2 == 0) ? 8 : 14.5f; i < w - 4; i += 13) {
+                    shapes.circle(x + i, y + j, 2.6f);
+                }
+            }
         }
         shapes.end();
+
+        shapes.begin(ShapeRenderer.ShapeType.Line);
+        shapes.setColor(pal().backLine);
+        switch (pal().backStyle()) {
+            case HATCH -> {
+                for (float i = -h; i < w + h; i += 11) {
+                    clippedLine(x + i, y, x + i - h, y + h, x, y, w, h);
+                    clippedLine(x + i, y + h, x + i - h, y, x, y, w, h);
+                }
+            }
+            case RINGS -> {
+                for (float i = 8; i < Math.max(w, h) / 2; i += 12) {
+                    if (w - i * 2 > 4 && h - i * 2 > 4) shapes.rect(x + i, y + i, w - i * 2, h - i * 2);
+                }
+            }
+            case STRIPES -> {
+                for (float i = 9; i < w; i += 9) shapes.line(x + i, y + 5, x + i, y + h - 5);
+            }
+            case CHEVRON -> {
+                float cx = x + w / 2;
+                for (float i = 0; i < h + w; i += 14) {
+                    clippedLine(cx, y + i - w / 2, x, y + i, x, y, w, h);
+                    clippedLine(cx, y + i - w / 2, x + w, y + i, x, y, w, h);
+                }
+            }
+            case PLAIN -> shapes.rect(x + 8, y + 8, w - 16, h - 16);
+            case DIAMONDS -> {
+                float s = 15;
+                for (float j = s; j < h - 3; j += s) {
+                    for (float i = ((int) (j / s) % 2 == 0) ? s : s * 1.5f; i < w - 3; i += s) {
+                        float cx = x + i, cy = y + j, r = s / 3;
+                        shapes.line(cx, cy - r, cx + r, cy);
+                        shapes.line(cx + r, cy, cx, cy + r);
+                        shapes.line(cx, cy + r, cx - r, cy);
+                        shapes.line(cx - r, cy, cx, cy - r);
+                    }
+                }
+            }
+            case DOTS -> { /* drawn in the filled pass above */ }
+            case WAVES -> {
+                for (float j = 6; j < h; j += 13) {
+                    for (float i = 2; i + 14 < w - 1; i += 14) {
+                        shapes.arc(x + i + 7, y + j, 7, 0, 180, 8);
+                    }
+                }
+            }
+            case STARBURST -> {
+                float cx = x + w / 2, cy = y + h / 2;
+                float r = w + h;
+                for (int a = 0; a < 360; a += 20) {
+                    double rad = Math.toRadians(a);
+                    clippedLine(cx, cy, cx + (float) Math.cos(rad) * r,
+                                        cy + (float) Math.sin(rad) * r, x, y, w, h);
+                }
+                shapes.circle(cx, cy, 10);
+            }
+        }
+        shapes.setColor(pal().accent);
+        shapes.rect(x, y, w, h);
+        shapes.end();
+    }
+
+    /**
+     * {@code shapes.line} clipped to a rectangle (Liang–Barsky). The pattern
+     * styles that overshoot the card need this because {@code ShapeRenderer}
+     * has no scissor of its own, and spilling ink across the felt is exactly
+     * the bug the Swing review pinned on {@code paintCardBack} once already.
+     */
+    private void clippedLine(float x0, float y0, float x1, float y1,
+                             float rx, float ry, float rw, float rh) {
+        float dx = x1 - x0, dy = y1 - y0;
+        float t0 = 0f, t1 = 1f;
+        float[] p = { -dx, dx, -dy, dy };
+        float[] q = { x0 - rx, rx + rw - x0, y0 - ry, ry + rh - y0 };
+        for (int i = 0; i < 4; i++) {
+            if (p[i] == 0) { if (q[i] < 0) return; continue; }
+            float r = q[i] / p[i];
+            if (p[i] < 0) { if (r > t1) return; if (r > t0) t0 = r; }
+            else          { if (r < t0) return; if (r < t1) t1 = r; }
+        }
+        shapes.line(x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy);
     }
 
     private void drawButtons() {

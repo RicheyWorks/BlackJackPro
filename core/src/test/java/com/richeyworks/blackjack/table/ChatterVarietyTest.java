@@ -41,30 +41,49 @@ class ChatterVarietyTest {
     }
 
     @Test void everyReactionHasEnoughLinesToNotFeelScripted() {
-        for (Persona p : Personas.defaults()) {
-            for (TableEvent e : TableEvent.values()) {
-                List<String> lines = p.linesFor(e);
-                if (lines.isEmpty()) continue;      // not reacting at all is fine
-                assertTrue(lines.size() >= MIN_LINES_PER_EVENT,
-                        p.name() + " has only " + lines.size() + " lines for " + e);
+        for (List<Persona> cast : Casts.all()) {
+            for (Persona p : cast) {
+                for (TableEvent e : TableEvent.values()) {
+                    List<String> lines = p.linesFor(e);
+                    if (lines.isEmpty()) continue;      // not reacting at all is fine
+                    assertTrue(lines.size() >= MIN_LINES_PER_EVENT,
+                            p.name() + " has only " + lines.size() + " lines for " + e);
+                }
             }
         }
     }
 
-    @Test void theTableHasSubstantialDepthOverall() {
-        int total = 0;
-        for (Persona p : Personas.defaults()) {
-            for (TableEvent e : TableEvent.values()) total += p.linesFor(e).size();
+    @Test void everyTableHasSubstantialDepthOverall() {
+        // Per cast, because the player only ever hears one cast at a time: a
+        // thin pirate table is not rescued by the regulars being deep.
+        for (List<Persona> cast : Casts.all()) {
+            int total = 0;
+            for (Persona p : cast) {
+                for (TableEvent e : TableEvent.values()) total += p.linesFor(e).size();
+            }
+            assertTrue(total >= 400, cast.get(0).name() + "'s table has only "
+                    + total + " lines across all three seats");
         }
-        assertTrue(total >= 300, "only " + total + " lines across the whole table");
+    }
+
+    @Test void theGameAsAWholeShipsADeepBank() {
+        int total = 0;
+        for (List<Persona> cast : Casts.all()) {
+            for (Persona p : cast) {
+                for (TableEvent e : TableEvent.values()) total += p.linesFor(e).size();
+            }
+        }
+        assertTrue(total >= 5000, "only " + total + " lines across every cast");
     }
 
     @Test void everyPersonaCarriesItsShare() {
         // One character doing all the talking makes the other two furniture.
-        for (Persona p : Personas.defaults()) {
-            int count = 0;
-            for (TableEvent e : TableEvent.values()) count += p.linesFor(e).size();
-            assertTrue(count >= 90, p.name() + " only has " + count + " lines");
+        for (List<Persona> cast : Casts.all()) {
+            for (Persona p : cast) {
+                int count = 0;
+                for (TableEvent e : TableEvent.values()) count += p.linesFor(e).size();
+                assertTrue(count >= 140, p.name() + " only has " + count + " lines");
+            }
         }
     }
 

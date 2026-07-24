@@ -23,7 +23,7 @@ public final class BuiltinPlugin implements BlackJackPlugin {
             "Built-in Pack",
             "0.3.0",
             "RicheyWorks",
-            "Six table themes, a counting AI, and the 21+3 side bet."
+            "The shipped table themes, a counting AI, and the 21+3 side bet."
     );
 
     @Override public PluginManifest manifest() { return MANIFEST; }

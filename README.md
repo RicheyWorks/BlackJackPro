@@ -10,11 +10,12 @@ Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing 
 
 - **House rules:** 6-deck shoe (~75% penetration), 3:2 blackjack, push on tie, double on any two cards, split up to 4 hands (split aces get one card), late surrender, insurance (2:1), dealer stands on soft 17 (toggle in Options). The game pays whole dollars, and any odd half rounds in the player's favour — a \$25 natural pays 38, not 37
 - **Swing desktop:** Custom-painted felt/cards/chips, procedural SFX, settings dialog, 12 achievements with toasts, bankroll + stats persistence
-- **Themes:** seven table looks (Classic Felt, Neon, Midnight, Crimson Room, Desert Sun, Ink, Brass Deco) defined once in `core` and rendered by both the Swing and libGDX front ends
-- **Table chatter:** three characters who react to play with ~520 lines of dialogue; they never encourage a bigger bet, and a test enforces it
+- **Themes:** twenty-four table looks defined once in `core` and rendered by both the Swing and libGDX front ends, across nine card-back styles — and **every theme seats a cast that talks like the theme.** Thirteen casts, thirty-nine characters: the regulars (Marge, Dutch, Priya) keep the neutral rooms (Classic, Midnight, Ink, Graphite); Neon/Arcade seat the arcade crowd (Pixel, Dash, Vex); The Abyss/Lagoon the reef crew (Marina, Moss, Dr. Coral); Glacier/Aurora the polar team (Ingrid, Sunny, Dr. Frost); Harvest Night a cozy-spooky trio (Agatha the witch, Barnaby the ghost, Edgar the raven); Ember the forge (Sela, Forge, Wyrm the polite dragon); Evergreen the snowed-in inn (Nan, Mr. Jolly, Carol); Sakura/Meadow the garden (Hana, Bram, Juniper); Crimson/Royal/Deco the society set (The Duchess, Maxie, Pemberton); Cocoa House the cafe (Esme, Gus, Praline); plus the pirate crew, the frontier crowd (also at Desert Sun), and the Nebula watch. The desktop picks themes from a visual **Theme Gallery** — every look rendered live as a miniature by its own renderer, badged with who it seats
+- **Table chatter:** ~6,200 lines of dialogue across the thirteen casts; nobody ever encourages a bigger bet, and a test suite enforces tone, per-event depth, global line uniqueness, and voice separation across every cast
+- **Bug-sniffing simulator:** plays the game the way a front end does — millions of seeded rounds, every query after every action, legality-honesty probes, a per-call money ledger, card-conservation checks, save/load round-trips, and a basic-strategy bot whose long-run results must land on the game's known ~0.5% house edge (a payout bug invisible to the ledger is visible to the math)
 - **Plugins:** ServiceLoader + external JARs — Hi-Lo counter AI, 21+3 side bet
 - **Distribution:** `jpackage` native installers (MSI/DMG/DEB); optional Steamworks bridge
-- **Mobile (WIP):** libGDX `TableScreen` at feature parity with the desktop on everything platform-neutral — all seven themes, sound, table chatter, 21+3, the Hi-Lo counter, settings/stats menu, and persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
+- **Mobile (WIP):** libGDX `TableScreen` at feature parity with the desktop on everything platform-neutral — all twenty-four themes with per-style card backs (crewed casts included), sound, table chatter, 21+3, the Hi-Lo counter, settings/stats menu, and persistence across app restarts; Android debug APK (minSdk 26); iOS not wired yet
 
 ## Build & run
 
@@ -32,6 +33,13 @@ Requires **JDK 21** on PATH. The Gradle wrapper is included — no separate Grad
 
 # Native installer (optional, needs -Pjpackage)
 ./gradlew :swing:jpackage -Pjpackage
+
+# Bug-sniffing soak (args: seeds, rounds per seed). Plays millions of rounds
+# against the real engine and exits loudly, with a reproducible seed, if
+# anything impossible ever happens.
+./gradlew :core:testClasses
+java -cp core/build/classes/java/main:core/build/classes/java/test \
+     com.richeyworks.blackjack.sim.GameSimulator 2000 2000
 ```
 
 **Android (optional):** Add `local.properties` with `sdk.dir=...` or set `ANDROID_HOME`, then `gradlew :android:assembleDebug`.

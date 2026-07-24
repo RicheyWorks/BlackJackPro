@@ -75,6 +75,71 @@ public class PaletteTheme implements TableTheme {
     }
 
     /* ----------------------------------------------------------------------- */
+    /* Felt                                                                    */
+    /* ----------------------------------------------------------------------- */
+
+    /**
+     * The theme's card-back motif, restated across the whole felt at large
+     * scale and very low alpha. This is what turns "a gradient with cards on
+     * it" into a place: the waves on The Abyss run under the cards, the rays
+     * on Ember glow behind the dealer, and a plain-back theme like Ink stays
+     * plain — restraint is part of the vocabulary too.
+     */
+    @Override
+    public void paintFeltDecor(Graphics2D g, int w, int h) {
+        g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 17));
+        g.setStroke(new BasicStroke(2f));
+        switch (palette.backStyle()) {
+            case HATCH -> {
+                for (int i = -h; i < w + h; i += 56) g.drawLine(i, 0, i - h, h);
+            }
+            case RINGS -> {
+                int cx = w / 2, cy = h / 2;
+                for (int r = 90; r < w; r += 110) g.drawOval(cx - r, cy - r, r * 2, r * 2);
+            }
+            case STRIPES -> {
+                for (int i = 44; i < w; i += 68) g.drawLine(i, 0, i, h);
+            }
+            case CHEVRON -> {
+                int cx = w / 2;
+                for (int y = -w / 4; y < h + w / 4; y += 84) {
+                    g.drawLine(cx, y, 0, y + w / 4);
+                    g.drawLine(cx, y, w, y + w / 4);
+                }
+            }
+            case PLAIN -> g.drawRoundRect(26, 26, w - 52, h - 52, 28, 28);
+            case DIAMONDS -> {
+                for (int i = -h; i < w + h; i += 84) {
+                    g.drawLine(i, 0, i - h, h);
+                    g.drawLine(i, 0, i + h, h);
+                }
+            }
+            case DOTS -> {
+                for (int y = 34; y < h; y += 56) {
+                    for (int x = ((y / 56) % 2 == 0) ? 34 : 62; x < w; x += 56) {
+                        g.fillOval(x - 3, y - 3, 6, 6);
+                    }
+                }
+            }
+            case WAVES -> {
+                for (int y = 26; y < h + 20; y += 52) {
+                    for (int x = -12; x < w; x += 72) g.drawArc(x, y - 18, 72, 36, 0, 180);
+                }
+            }
+            case STARBURST -> {
+                // Rays fan down from behind the dealer's side of the table.
+                int cx = w / 2, cy = 46;
+                int reach = Math.max(w, h) * 2;
+                for (int a = 195; a <= 345; a += 10) {
+                    double rad = Math.toRadians(a);
+                    g.drawLine(cx, cy, cx + (int) (Math.cos(rad) * reach),
+                                        cy - (int) (Math.sin(rad) * reach));
+                }
+            }
+        }
+    }
+
+    /* ----------------------------------------------------------------------- */
     /* Cards                                                                   */
     /* ----------------------------------------------------------------------- */
 
@@ -158,6 +223,45 @@ public class PaletteTheme implements TableTheme {
                 }
             }
             case PLAIN -> g.drawRoundRect(x + 7, y + 7, w - 14, h - 14, 9, 9);
+            case DIAMONDS -> {
+                // A lattice of small diamonds: the classic card-back motif.
+                int s = 12;
+                for (int j = 0; j <= h; j += s) {
+                    for (int i = ((j / s) % 2 == 0) ? 0 : s / 2; i <= w; i += s) {
+                        int cx = x + i, cy = y + j;
+                        g.drawLine(cx, cy - s / 3, cx + s / 3, cy);
+                        g.drawLine(cx + s / 3, cy, cx, cy + s / 3);
+                        g.drawLine(cx, cy + s / 3, cx - s / 3, cy);
+                        g.drawLine(cx - s / 3, cy, cx, cy - s / 3);
+                    }
+                }
+            }
+            case DOTS -> {
+                int s = 10;
+                for (int j = 6; j < h; j += s) {
+                    for (int i = ((j / s) % 2 == 0) ? 6 : 6 + s / 2; i < w; i += s) {
+                        g.fillOval(x + i - 2, y + j - 2, 4, 4);
+                    }
+                }
+            }
+            case WAVES -> {
+                // Stacked arcs read as water without needing a curve class.
+                for (int j = 4; j < h + 10; j += 10) {
+                    for (int i = -6; i < w; i += 14) {
+                        g.drawArc(x + i, y + j - 5, 14, 10, 0, 180);
+                    }
+                }
+            }
+            case STARBURST -> {
+                int cx = x + w / 2, cy = y + h / 2;
+                int reach = Math.max(w, h);
+                for (int a = 0; a < 360; a += 20) {
+                    double rad = Math.toRadians(a);
+                    g.drawLine(cx, cy, cx + (int) (Math.cos(rad) * reach),
+                                        cy + (int) (Math.sin(rad) * reach));
+                }
+                g.drawOval(cx - 9, cy - 9, 18, 18);
+            }
         }
         g.setClip(clip);
 

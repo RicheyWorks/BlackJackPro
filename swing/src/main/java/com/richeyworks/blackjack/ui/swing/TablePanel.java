@@ -70,6 +70,29 @@ public final class TablePanel extends JPanel {
         return felt;
     }
 
+    /**
+     * Soft radial darkening toward the edges. Real card tables are lit from
+     * above the middle, and the vignette is what sells that on a flat
+     * gradient — it also quietly frames the action so the eye rests on the
+     * cards, not the corners. Cached like the felt: building a radial
+     * gradient per repaint would be churn for an image that never changes
+     * between resizes.
+     */
+    private java.awt.RadialGradientPaint vignette;
+    private int vigW = -1, vigH = -1;
+
+    private java.awt.RadialGradientPaint vignette(int w, int h) {
+        if (vignette == null || vigW != w || vigH != h) {
+            vignette = new java.awt.RadialGradientPaint(
+                    new java.awt.geom.Point2D.Float(w / 2f, h * 0.42f),
+                    Math.max(w, h) * 0.75f,
+                    new float[] { 0.55f, 1f },
+                    new Color[] { new Color(0, 0, 0, 0), new Color(0, 0, 0, 105) });
+            vigW = w; vigH = h;
+        }
+        return vignette;
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -87,6 +110,14 @@ public final class TablePanel extends JPanel {
         int w = getWidth(), h = getHeight();
 
         g2.setPaint(felt(h));
+        g2.fillRect(0, 0, w, h);
+
+        // Theme motif on the felt, through scratch graphics per the theme
+        // contract, then the vignette over it so the pattern fades into the
+        // edges instead of ending abruptly at them.
+        Graphics2D decor = (Graphics2D) g2.create();
+        try { theme.paintFeltDecor(decor, w, h); } finally { decor.dispose(); }
+        g2.setPaint(vignette(w, h));
         g2.fillRect(0, 0, w, h);
 
         g2.setColor(theme.accent());
