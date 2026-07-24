@@ -24,6 +24,22 @@ import java.util.List;
 public final class TablePanel extends JPanel {
 
     private static final Color  LABEL_GOLD = new Color(0xF8E9A1);
+    /** Caption ink for light felts, where gold and white both wash out. */
+    private static final Color  LABEL_DARK = new Color(0x1C2430);
+
+    private static int luma(Color c) {
+        return (int) (0.299 * c.getRed() + 0.587 * c.getGreen() + 0.114 * c.getBlue());
+    }
+
+    /**
+     * {@code preferred} if it reads against {@code bg}, otherwise whichever of
+     * the two label inks does. Captions were hardcoded gold for years because
+     * every felt was dark; Glacier and Meadow ended that assumption.
+     */
+    private static Color inkFor(Color bg, Color preferred) {
+        if (Math.abs(luma(preferred) - luma(bg)) >= 95) return preferred;
+        return luma(bg) > 140 ? LABEL_DARK : LABEL_GOLD;
+    }
     private static final Stroke ARC_STROKE = new BasicStroke(2.5f);
 
     /** Chip denominations drawn in the bet stack, largest first. */
@@ -124,7 +140,13 @@ public final class TablePanel extends JPanel {
         g2.setStroke(ARC_STROKE);
         g2.drawArc(w / 2 - 480, 40, 960, 700, 0, 180);
         g2.setFont(g2.getFont().deriveFont(Font.ITALIC, 13f));
+        // The top caption sits on the light end of the gradient, the bottom
+        // caption on the dark end -- ink each for its own background. On a
+        // pale felt like Glacier the accent is near-white, and near-white on
+        // pale blue is how the audit found this line.
+        g2.setColor(inkFor(theme.feltTop(), theme.accent()));
         drawCentered(g2, "BLACKJACK PAYS 3 TO 2", w / 2, 80);
+        g2.setColor(inkFor(theme.feltBottom(), theme.accent()));
         drawCentered(g2, "DEALER " + (engine.rules().dealerHitsSoft17 ? "HITS" : "STANDS") + " ON SOFT 17",
                 w / 2, h - 36);
 
@@ -133,7 +155,7 @@ public final class TablePanel extends JPanel {
         // and in the post-round BETTING view (the dealer hand is still on the table).
         Phase phase = engine.phase();
         boolean hideHole = phase == Phase.DEALING || phase == Phase.INSURANCE || phase == Phase.PLAYER;
-        g2.setColor(LABEL_GOLD);
+        g2.setColor(inkFor(theme.feltTop(), LABEL_GOLD));
         g2.setFont(g2.getFont().deriveFont(Font.BOLD, 16f));
         String dealerCaption;
         if (engine.dealer().isEmpty()) dealerCaption = "Dealer";
@@ -161,7 +183,8 @@ public final class TablePanel extends JPanel {
             String label  = prefix + hh.value() + (hh.isSoft() ? " soft" : "")
                           + "  ·  $" + hh.bet() + state;
             g2.setFont(g2.getFont().deriveFont(Font.BOLD, 15f));
-            g2.setColor(active ? Color.WHITE : LABEL_GOLD);
+            g2.setColor(active ? inkFor(theme.feltBottom(), Color.WHITE)
+                               : inkFor(theme.feltBottom(), LABEL_GOLD));
             drawCentered(g2, label, cx, yPlayer + theme.cardHeight() + 28);
         }
 

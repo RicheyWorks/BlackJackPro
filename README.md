@@ -6,10 +6,21 @@
 
 Casino-grade single-player blackjack in Java. Pure rules engine, polished Swing desktop UI, and an early libGDX/Android port sharing the same core.
 
+![A hand in play on the Nebula table](docs/screenshots/nebula-hand.png)
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Pirate Cove](docs/screenshots/pirate-cove.png) *Pirate Cove — seats a pirate crew* | ![Sakura](docs/screenshots/sakura.png) *Sakura mid-hand* |
+| ![Glacier](docs/screenshots/glacier.png) *Glacier — the light end of the range* | ![Theme Gallery](docs/screenshots/theme-gallery.png) *The Theme Gallery* |
+
+All twenty-four looks at a glance: [docs/screenshots/all-themes.png](docs/screenshots/all-themes.png).
+
 ## Features
 
 - **House rules:** 6-deck shoe (~75% penetration), 3:2 blackjack, push on tie, double on any two cards, split up to 4 hands (split aces get one card), late surrender, insurance (2:1), dealer stands on soft 17 (toggle in Options). The game pays whole dollars, and any odd half rounds in the player's favour — a \$25 natural pays 38, not 37
-- **Swing desktop:** Custom-painted felt/cards/chips, procedural SFX, settings dialog, 12 achievements with toasts, bankroll + stats persistence
+- **Swing desktop:** Custom-painted felt/cards/chips, procedural SFX, settings dialog, 12 achievements with toasts, bankroll + stats persistence. The whole window dresses for the theme — control bar, status bar, and buttons are derived from the active palette, and every caption picks readable ink for its felt, from Ink's near-black to Glacier's pale ice
 - **Themes:** twenty-four table looks defined once in `core` and rendered by both the Swing and libGDX front ends, across nine card-back styles — and **every theme seats a cast that talks like the theme.** Thirteen casts, thirty-nine characters: the regulars (Marge, Dutch, Priya) keep the neutral rooms (Classic, Midnight, Ink, Graphite); Neon/Arcade seat the arcade crowd (Pixel, Dash, Vex); The Abyss/Lagoon the reef crew (Marina, Moss, Dr. Coral); Glacier/Aurora the polar team (Ingrid, Sunny, Dr. Frost); Harvest Night a cozy-spooky trio (Agatha the witch, Barnaby the ghost, Edgar the raven); Ember the forge (Sela, Forge, Wyrm the polite dragon); Evergreen the snowed-in inn (Nan, Mr. Jolly, Carol); Sakura/Meadow the garden (Hana, Bram, Juniper); Crimson/Royal/Deco the society set (The Duchess, Maxie, Pemberton); Cocoa House the cafe (Esme, Gus, Praline); plus the pirate crew, the frontier crowd (also at Desert Sun), and the Nebula watch. The desktop picks themes from a visual **Theme Gallery** — every look rendered live as a miniature by its own renderer, badged with who it seats
 - **Table chatter:** ~6,200 lines of dialogue across the thirteen casts; nobody ever encourages a bigger bet, and a test suite enforces tone, per-event depth, global line uniqueness, and voice separation across every cast
 - **Bug-sniffing simulator:** plays the game the way a front end does — millions of seeded rounds, every query after every action, legality-honesty probes, a per-call money ledger, card-conservation checks, save/load round-trips, and a basic-strategy bot whose long-run results must land on the game's known ~0.5% house edge (a payout bug invisible to the ledger is visible to the math)
@@ -31,8 +42,9 @@ Requires **JDK 21** on PATH. The Gradle wrapper is included — no separate Grad
 # libGDX desktop preview (optional)
 ./gradlew :gdx-desktop:run
 
-# Native installer (optional, needs -Pjpackage)
-./gradlew :swing:jpackage -Pjpackage
+# Native installer — MSI on Windows (needs the WiX Toolset on PATH),
+# DMG on macOS, DEB elsewhere. Bundles its own Java runtime via jlink.
+./gradlew :swing:jpackage
 
 # Bug-sniffing soak (args: seeds, rounds per seed). Plays millions of rounds
 # against the real engine and exits loudly, with a reproducible seed, if

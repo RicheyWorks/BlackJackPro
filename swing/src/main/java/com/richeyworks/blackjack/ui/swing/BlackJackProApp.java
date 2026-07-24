@@ -115,16 +115,80 @@ public final class BlackJackProApp extends JFrame {
 
     private static final int[] CHIP_VALUES = {1, 5, 25, 100, 500};
 
-    // Table palette — hex literals collected here for consistency and reuse.
+    // Fallback chrome — the classic-green defaults. The live values are the
+    // mutable fields below, recomputed from the active theme by
+    // computeChrome(): a Nebula table with a casino-green control bar and
+    // brown buttons was the front-end audit's biggest finding.
     private static final Color HUD_GOLD    = new Color(0xF8E9A1); // status text + bankroll/bet HUD
     private static final Color STATUS_BG   = new Color(0x0E2E1A); // status-bar background
     private static final Color BAR_BG      = new Color(0x0D2A18); // control-bar background
     private static final Color SHOE_GREY   = new Color(0xBDBDBD); // shoe-count label
     private static final Color SIDE_GOLD   = new Color(0xC9A227); // 21+3 side-bet label
     private static final Color COUNT_GREEN = new Color(0x9FE0B0); // Hi-Lo count label
-    private static final Color BTN_FACE    = new Color(0x8B5E2B); // pirate-button face
-    private static final Color BTN_BORDER  = new Color(0x5C3A0F); // pirate-button border
+    private static final Color BTN_FACE    = new Color(0x8B5E2B); // action-button face
+    private static final Color BTN_BORDER  = new Color(0x5C3A0F); // action-button border
     private static final Color FLASH_BG    = new Color(0x6E3030); // transient error flash
+
+    /* Chrome derived from the active theme; see computeChrome(). */
+    private Color statusBg = STATUS_BG, barBg = BAR_BG,
+                  btnFace = BTN_FACE, btnBorder = BTN_BORDER,
+                  btnText = Color.WHITE, hudText = HUD_GOLD;
+    private JPanel controlBar;
+    private final java.util.List<JButton> themedButtons = new java.util.ArrayList<>();
+
+    private static int luma(Color c) {
+        return (int) (0.299 * c.getRed() + 0.587 * c.getGreen() + 0.114 * c.getBlue());
+    }
+
+    private static Color scale(Color c, float f) {
+        return new Color(Math.min(255, (int) (c.getRed() * f)),
+                         Math.min(255, (int) (c.getGreen() * f)),
+                         Math.min(255, (int) (c.getBlue() * f)));
+    }
+
+    private static Color mix(Color a, Color b, float t) {
+        return new Color((int) (a.getRed()   + (b.getRed()   - a.getRed())   * t),
+                         (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                         (int) (a.getBlue()  + (b.getBlue()  - a.getBlue())  * t));
+    }
+
+    /**
+     * Derive the window chrome from the active theme, so the control bar,
+     * status bar, and buttons belong to the same room as the felt. Everything
+     * is pushed dark enough that the light HUD text stays readable even when
+     * the felt itself is pale (Glacier, Meadow).
+     */
+    private void computeChrome() {
+        Color bottom = theme.feltBottom();
+        Color accent = theme.accent();
+        barBg = scale(bottom, luma(bottom) > 90 ? 0.35f : 0.72f);
+        if (luma(barBg) > 70) barBg = scale(barBg, 0.6f);
+        statusBg = scale(barBg, 0.85f);
+        btnFace  = scale(accent, 0.38f);
+        btnBorder= scale(btnFace, 0.55f);
+        btnText  = luma(btnFace) > 140 ? Color.BLACK : Color.WHITE;
+        hudText  = mix(accent, Color.WHITE, 0.55f);
+        if (luma(hudText) < 170) hudText = mix(hudText, Color.WHITE, 0.5f);
+    }
+
+    /** Apply the computed chrome to every themed control. */
+    private void restyleChrome() {
+        computeChrome();
+        statusBar.setBackground(statusBg);
+        statusBar.setForeground(hudText);
+        if (controlBar != null) controlBar.setBackground(barBg);
+        for (JButton b : themedButtons) {
+            b.setBackground(btnFace);
+            b.setForeground(btnText);
+            b.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(btnBorder, 1, true),
+                    BorderFactory.createEmptyBorder(6, 14, 6, 14)));
+        }
+        bankLabel.setForeground(hudText);
+        betLabel.setForeground(hudText);
+        sideLabel.setForeground(mix(theme.accent(), Color.WHITE, 0.25f));
+        repaint();
+    }
 
     public BlackJackProApp(Engine engine,
                            MusicService music,
@@ -174,14 +238,14 @@ public final class BlackJackProApp extends JFrame {
             else ((Timer) e.getSource()).stop();
         });
         add(table, BorderLayout.CENTER);
-        add(buildControlBar(), BorderLayout.SOUTH);
+        controlBar = buildControlBar();
+        add(controlBar, BorderLayout.SOUTH);
 
         statusBar.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
-        statusBar.setForeground(HUD_GOLD);
         statusBar.setOpaque(true);
-        statusBar.setBackground(STATUS_BG);
         add(statusBar, BorderLayout.NORTH);
         setJMenuBar(buildMenuBar());
+        restyleChrome();   // chrome matches the restored theme from first paint
 
         setSize(1200, 820);
         setLocationRelativeTo(null);
@@ -276,26 +340,26 @@ public final class BlackJackProApp extends JFrame {
             p.add(b, c);
             chipBtns[i] = b;
         }
-        bClear = pirateButton("Clear");
+        bClear = themedButton("Clear");
         bClear.addActionListener(e -> clearBet());
         c.gridx = CHIP_VALUES.length;
         p.add(bClear, c);
 
         if (sideBets.available()) {
-            bSide = pirateButton("21+3 +$5");
+            bSide = themedButton("21+3 +$5");
             bSide.addActionListener(e -> placeSideBet(5));
             c.gridx = CHIP_VALUES.length + 1;
             p.add(bSide, c);
         }
 
-        bDeal       = pirateButton("Deal");
-        bHit        = pirateButton("Hit");
-        bStand      = pirateButton("Stand");
-        bDouble     = pirateButton("Double");
-        bSplit      = pirateButton("Split");
-        bSurrender  = pirateButton("Surrender");
-        bIns        = pirateButton("Insure");
-        bNoIns      = pirateButton("Decline");
+        bDeal       = themedButton("Deal");
+        bHit        = themedButton("Hit");
+        bStand      = themedButton("Stand");
+        bDouble     = themedButton("Double");
+        bSplit      = themedButton("Split");
+        bSurrender  = themedButton("Surrender");
+        bIns        = themedButton("Insure");
+        bNoIns      = themedButton("Decline");
 
         bDeal.addActionListener(e -> dealRound());
         bHit.addActionListener(e -> safe(engine::hit, null));
@@ -459,7 +523,7 @@ public final class BlackJackProApp extends JFrame {
             chatter = new TableChatter(cast, new java.util.Random());
             table.setChatter(chatter);
         }
-        repaint();
+        restyleChrome();   // the bar, buttons, and HUD move rooms too
     }
 
     /**
@@ -509,15 +573,26 @@ public final class BlackJackProApp extends JFrame {
         return b;
     }
 
-    private JButton pirateButton(String text) {
+    private JButton themedButton(String text) {
         JButton b = new JButton(text);
-        b.setBackground(BTN_FACE);
-        b.setForeground(Color.WHITE);
+        b.setBackground(btnFace);
+        b.setForeground(btnText);
         b.setFocusPainted(false);
+        // Paint the fill ourselves: Ocean/Metal draws its own white gradient
+        // on whichever button holds focus, which lit one button up like a
+        // searchlight on every dark theme (the front-end audit caught it as
+        // "why is 21+3 white"). Opaque + no content fill = flat themed colour
+        // in every state, with a darkened press for feedback.
+        b.setContentAreaFilled(false);
+        b.setOpaque(true);
+        b.getModel().addChangeListener(e -> b.setBackground(
+                b.getModel().isArmed() ? scale(btnFace, 0.72f) : btnFace));
         b.setFont(b.getFont().deriveFont(Font.BOLD, 13f));
         b.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BTN_BORDER, 1, true),
+                BorderFactory.createLineBorder(btnBorder, 1, true),
                 BorderFactory.createEmptyBorder(6, 14, 6, 14)));
+        // Registered so restyleChrome() can re-dress it when the theme changes.
+        themedButtons.add(b);
         return b;
     }
 
@@ -942,17 +1017,19 @@ public final class BlackJackProApp extends JFrame {
     /**
      * Briefly tint the status bar to flag a rejected action.
      *
-     * <p>Restores the {@link #STATUS_BG} constant rather than whatever colour
-     * happened to be showing: capturing the current background meant a second
-     * flash within the timer window captured the flash colour as "normal" and
-     * left the bar red for the rest of the session. One reusable timer, so
-     * repeated flashes extend the tint instead of racing each other.
+     * <p>Restores the themed {@code statusBg} field rather than whatever
+     * colour happened to be showing: capturing the current background meant a
+     * second flash within the timer window captured the flash colour as
+     * "normal" and left the bar red for the rest of the session. Reading the
+     * field at fire time also means a theme change mid-flash restores the new
+     * theme's bar, not the old one's. One reusable timer, so repeated flashes
+     * extend the tint instead of racing each other.
      */
     private void flash(String msg) {
         statusBar.setText(msg);
         statusBar.setBackground(FLASH_BG);
         if (flashTimer == null) {
-            flashTimer = new Timer(900, e -> statusBar.setBackground(STATUS_BG));
+            flashTimer = new Timer(900, e -> statusBar.setBackground(statusBg));
             flashTimer.setRepeats(false);
         }
         flashTimer.restart();

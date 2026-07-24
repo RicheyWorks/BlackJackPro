@@ -4,7 +4,7 @@
  * platform-specific media (javax.sound) and Steam bridge.
  *
  * Run:        gradlew :swing:run
- * Installer:  gradlew :swing:jpackage -Pjpackage
+ * Installer:  gradlew :swing:jpackage
  */
 plugins {
     java
