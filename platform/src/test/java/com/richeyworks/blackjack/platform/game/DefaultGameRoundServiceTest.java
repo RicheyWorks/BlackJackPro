@@ -8,6 +8,7 @@ import com.richeyworks.blackjack.platform.compliance.PlayerComplianceState;
 import com.richeyworks.blackjack.platform.compliance.PlayerComplianceState.KycStatus;
 import com.richeyworks.blackjack.platform.compliance.PlayerComplianceState.RgLimits;
 import com.richeyworks.blackjack.platform.compliance.PlayerDirectory;
+import com.richeyworks.blackjack.platform.rng.ProvablyFairRng;
 import com.richeyworks.blackjack.platform.rng.Rng;
 import com.richeyworks.blackjack.platform.wallet.InMemoryWallet;
 import com.richeyworks.blackjack.platform.wallet.LedgerEntry;
@@ -20,6 +21,8 @@ import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -56,15 +59,19 @@ class DefaultGameRoundServiceTest {
         return sum;
     }
 
-    private GameRoundService.RoundState standOut(GameRoundService.RoundState st) {
+    private GameRoundService.RoundState standOut(GameRoundService service, GameRoundService.RoundState st) {
         int guard = 0;
         while (!st.settled() && guard++ < 20) {
             var action = "INSURANCE".equals(st.phase())
                     ? GameRoundService.PlayerAction.INSURANCE_DECLINE
                     : GameRoundService.PlayerAction.STAND;
-            st = svc.applyAction(st.roundId(), action);
+            st = service.applyAction(st.roundId(), action);
         }
         return st;
+    }
+
+    private GameRoundService.RoundState standOut(GameRoundService.RoundState st) {
+        return standOut(svc, st);
     }
 
     @Test
@@ -148,5 +155,28 @@ class DefaultGameRoundServiceTest {
         assertTrue(a.roundId().startsWith("round-"));
         // UUID form, not "round-1" / "round-2"
         assertTrue(a.roundId().length() > 20);
+    }
+
+    @Test
+    void commitmentIsPublishedAtStartAndRevealOnlyAfterSettle() {
+        fund(50_000);
+        ProvablyFairRng fair = new ProvablyFairRng(new java.security.SecureRandom(new byte[]{5, 5, 5}));
+        GameRoundService fairSvc = new DefaultGameRoundService(gate, verified, wallet, fair);
+
+        GameRoundService.RoundState open = fairSvc.startRound("p1", USD, 100, "pf-key");
+        assertNotNull(open.commitmentHash());
+        assertTrue(open.commitmentHash().length() >= 32);
+
+        if (!open.settled()) {
+            assertNull(open.serverSeedReveal(), "seed must stay secret until settlement");
+            open = standOut(fairSvc, open);
+        }
+        assertTrue(open.settled());
+        assertNotNull(open.serverSeedReveal());
+        assertTrue(ProvablyFairRng.verifyCommitment(open.serverSeedReveal(), open.commitmentHash()));
+
+        Rng.ServerSeedReveal rev = fairSvc.reveal(open.roundId());
+        assertEquals(open.serverSeedReveal(), rev.serverSeed());
+        assertEquals(open.commitmentHash(), rev.commitmentHash());
     }
 }

@@ -1,6 +1,7 @@
 package com.richeyworks.blackjack.platform.game;
 
 import com.richeyworks.blackjack.platform.common.Asset;
+import com.richeyworks.blackjack.platform.rng.Rng;
 
 /**
  * Server-authoritative round resolution. Wraps the existing {@code :core} Engine (the same
@@ -35,8 +36,27 @@ public interface GameRoundService {
                 "use applyAction(playerId, roundId, action, actionKey) — round actions must bind a player");
     }
 
+    /**
+     * Post-settlement reveal of the server seed for a finished round.
+     * Throws if the round is still open or unknown.
+     */
+    Rng.ServerSeedReveal reveal(String roundId);
+
     enum PlayerAction { HIT, STAND, DOUBLE, SPLIT, SURRENDER, INSURANCE_TAKE, INSURANCE_DECLINE }
 
-    /** Opaque, server-owned snapshot returned to the thin client for rendering. */
-    record RoundState(String roundId, String phase, String publicView, boolean settled, long payoutMinor) {}
+    /**
+     * Opaque, server-owned snapshot returned to the thin client for rendering.
+     *
+     * <p>{@code commitmentHash} is published as soon as the round starts so the
+     * client can pin the server's seed before cards land. {@code serverSeedReveal}
+     * is non-null only after settlement — that is when verification becomes possible.
+     */
+    record RoundState(
+            String roundId,
+            String phase,
+            String publicView,
+            boolean settled,
+            long payoutMinor,
+            String commitmentHash,
+            String serverSeedReveal) {}
 }

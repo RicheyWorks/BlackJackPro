@@ -70,6 +70,8 @@ public final class DefaultGameRoundService implements GameRoundService {
     private final Map<String, RoundState> finishedByKey = new HashMap<>();
     /** actionKey -> last snapshot, so applyAction retries do not re-hit / re-hold. */
     private final Map<String, RoundState> actionByKey = new HashMap<>();
+    /** Settled reveals retained after the live round map forgets the hand. */
+    private final Map<String, Rng.ServerSeedReveal> reveals = new HashMap<>();
     private final AtomicLong seq = new AtomicLong();
 
     public DefaultGameRoundService(ComplianceGate gate, PlayerDirectory players, Wallet wallet, Rng rng) {
@@ -109,7 +111,6 @@ public final class DefaultGameRoundService implements GameRoundService {
         return r;
     }
 
-
     @Override
     public synchronized RoundState startRound(String playerId, Asset asset, long stakeMinor, String idempotencyKey) {
         if (stakeMinor <= 0 || stakeMinor > MAX_STAKE) {
@@ -139,7 +140,7 @@ public final class DefaultGameRoundService implements GameRoundService {
         // leave orphan escrow with no round to expire.
         String roundId = "round-" + UUID.randomUUID();
         String clientSeed = idempotencyKey;
-        rng.commitServerSeed(roundId);
+        String commitment = rng.commitServerSeed(roundId);
         long notionalLong = Math.min(Integer.MAX_VALUE / 2L, stakeMinor * (long) STAKE_MULTIPLE);
         int notional = (int) notionalLong;
         Engine engine = new Engine(notional, new RoundRng(rng, roundId, clientSeed), freeze(rules));
@@ -148,7 +149,7 @@ public final class DefaultGameRoundService implements GameRoundService {
         wallet.hold(playerId, asset, stakeMinor, holdKey);
 
         Round r = new Round(roundId, engine, playerId, asset, scopedKey,
-                engine.stats().totalWagered, engine.stats().totalReturned, now());
+                engine.stats().totalWagered, engine.stats().totalReturned, now(), commitment);
         r.heldMinor = stakeMinor;
         rounds.put(roundId, r);
         roundByKey.put(scopedKey, roundId);
@@ -187,7 +188,6 @@ public final class DefaultGameRoundService implements GameRoundService {
         if (r.settled) throw new IllegalStateException("round already settled: " + roundId);
         r.lastActionAt = now();
         Engine e = r.engine;
-
 
         switch (action) {
             case HIT -> e.hit();
@@ -230,6 +230,16 @@ public final class DefaultGameRoundService implements GameRoundService {
         return applyAction(r.playerId, roundId, action, roundId + ":act:" + seq.incrementAndGet());
     }
 
+    @Override
+    public synchronized Rng.ServerSeedReveal reveal(String roundId) {
+        Objects.requireNonNull(roundId, "roundId");
+        Rng.ServerSeedReveal cached = reveals.get(roundId);
+        if (cached != null) return cached;
+        Round r = rounds.get(roundId);
+        if (r == null) throw new IllegalArgumentException("unknown round: " + roundId);
+        if (!r.settled) throw new IllegalStateException("round not settled: " + roundId);
+        return publishReveal(r);
+    }
 
     private void authorizeWager(String playerId, Asset asset, long amountMinor) {
         PlayerComplianceState state = players.lookup(playerId);
@@ -254,8 +264,6 @@ public final class DefaultGameRoundService implements GameRoundService {
         }
     }
 
-
-
     private void settleIfComplete(Round r) {
         if (r.settled || r.engine.phase() != Phase.BETTING) return;
         long engineWagered = (long) r.engine.stats().totalWagered  - r.wageredAtStart;
@@ -278,11 +286,28 @@ public final class DefaultGameRoundService implements GameRoundService {
                 new LedgerEntry("e-" + seq.incrementAndGet(), tx, Wallet.HOUSE_PNL,             r.asset,  houseNet,    tx, now())));
         r.settled = true;
         r.payoutMinor = returned;
+        publishReveal(r);
         finishedByKey.put(r.startKey, snapshot(r));
     }
 
+    private Rng.ServerSeedReveal publishReveal(Round r) {
+        Rng.ServerSeedReveal existing = reveals.get(r.roundId);
+        if (existing != null) return existing;
+        Rng.ServerSeedReveal rev = rng.reveal(r.roundId);
+        r.serverSeedReveal = rev.serverSeed();
+        reveals.put(r.roundId, rev);
+        return rev;
+    }
+
     private RoundState snapshot(Round r) {
-        return new RoundState(r.roundId, r.engine.phase().name(), publicView(r), r.settled, r.payoutMinor);
+        return new RoundState(
+                r.roundId,
+                r.engine.phase().name(),
+                publicView(r),
+                r.settled,
+                r.payoutMinor,
+                r.commitmentHash,
+                r.settled ? r.serverSeedReveal : null);
     }
 
     private String publicView(Round r) {
@@ -344,9 +369,16 @@ public final class DefaultGameRoundService implements GameRoundService {
         if (finishedByKey.size() > 50_000) {
             finishedByKey.clear(); // rare; operator should call with normal TTL
         }
+        if (reveals.size() > 50_000) {
+            reveals.clear();
+        }
         return retired;
     }
 
+    /** Convenience overload using the default TTL. */
+    public synchronized int expireRounds() {
+        return expireRounds(DEFAULT_ROUND_TTL_MS);
+    }
 
     /** Live rounds, for operational visibility. */
     public synchronized int openRounds() { return rounds.size(); }
@@ -362,14 +394,16 @@ public final class DefaultGameRoundService implements GameRoundService {
         final long wageredAtStart;
         final long returnedAtStart;
         final long startedAt;
+        final String commitmentHash;
         long lastActionAt;
         final java.util.Set<String> holdKeys = new java.util.HashSet<>();
         long heldMinor;
         boolean settled;
         long payoutMinor;
+        String serverSeedReveal;
 
         Round(String roundId, Engine engine, String playerId, Asset asset, String startKey,
-              long wageredAtStart, long returnedAtStart, long startedAt) {
+              long wageredAtStart, long returnedAtStart, long startedAt, String commitmentHash) {
             this.roundId = roundId;
             this.engine = engine;
             this.playerId = playerId;
@@ -379,6 +413,7 @@ public final class DefaultGameRoundService implements GameRoundService {
             this.returnedAtStart = returnedAtStart;
             this.startedAt = startedAt;
             this.lastActionAt = startedAt;
+            this.commitmentHash = commitmentHash;
         }
     }
 }

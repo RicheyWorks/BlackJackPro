@@ -6,13 +6,15 @@ out/
 *.class
 *.log
 
-# IDE
+# IDE / personal editor state
 .classpath
 .project
 .settings/
 .idea/
 .vscode/
 *.iml
+*.geany
+geany_run.bat
 
 # Generated docs
 javadoc/
@@ -21,6 +23,11 @@ javadoc/
 resources/logs/
 resources/saves/
 resources/save.txt
+
+# Stale CWD-relative player state from the pre-AppPaths era (never ship these)
+swing/resources/save.txt
+swing/resources/settings.properties
+swing/resources/achievements.txt
 
 # Large binary assets — host these outside git
 resources/music/*.mp3
@@ -41,3 +48,4 @@ gradle.properties
 
 # Local agent/tool scratch
 .claude/
+_to_delete/
