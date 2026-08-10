@@ -11,6 +11,7 @@
  *   :gdx-desktop  libGDX LWJGL3 desktop launcher. Verifies the libGDX UI
  *                 before pushing to Android.
  *   :android      libGDX Android launcher. Produces an APK.
+ *   :platform     server-side compliance / wallet / round skeleton.
  *
  * Common targets:
  *   gradlew :swing:run                    Swing desktop (the existing build)
@@ -31,7 +32,8 @@ plugins {
 
 allprojects {
     group = "com.richeyworks"
-    version = "0.3.0-SNAPSHOT"
+    // Release cut: drop -SNAPSHOT so jar manifests match the jpackage app version.
+    version = "0.3.0"
 
     repositories {
         mavenCentral()

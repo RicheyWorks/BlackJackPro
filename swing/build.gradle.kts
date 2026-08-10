@@ -99,6 +99,15 @@ runtime {
             "-Dsun.java2d.uiScale.enabled=true"
         )
 
+        // Optional background music lives outside the jar (large binaries, often
+        // gitignored). When present, ship it as app content so assetRoot() finds
+        // resources/music next to the install, not relative to the CWD.
+        val musicDir = file("${rootDir}/resources/music")
+        if (musicDir.isDirectory && musicDir.listFiles()?.isNotEmpty() == true) {
+            // jpackage --app-content copies the directory next to the app image.
+            imageOptions.addAll(listOf("--app-content", musicDir.parentFile.absolutePath))
+        }
+
         val os = org.gradle.internal.os.OperatingSystem.current()
         if (os.isWindows) {
             installerType = "msi"

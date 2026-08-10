@@ -49,21 +49,24 @@ java -cp core/build/classes/java/main:core/build/classes/java/test \
 **Background music (optional):** drop `.wav` files into `resources/music/` — see
 [`resources/music/README.md`](resources/music/README.md). WAV only; stock Java
 can't decode MP3. Audio is gitignored, so the repo ships without tracks and the
-music feature stays quietly off until you add some.
+music feature stays quietly off until you add some. Packaging will include the
+folder when tracks are present.
 
 ## Project status
 
 | Area | Status |
 |------|--------|
 | Core engine + tests | Working — JUnit 5; CI green on Ubuntu, Windows, macOS |
-| Swing desktop | Primary polished build — themes, plugins, achievements, saves |
+| Swing desktop | Primary polished build — themes, plugins, achievements, saves; **v0.3.0 release candidate** |
+| Native installers | `jpackage` MSI/DMG/DEB via tag `v*.*.*` — see [`RELEASE.md`](RELEASE.md) |
 | libGDX + Android | Playable — themes, sound, chatter, side bet, counter, settings, persistence |
-| iOS / mobile polish | Not started — animated cards, sound, settings UI on mobile |
+| iOS / mobile polish | Not started — store signing, device QA, iOS |
+| Online real-money platform | Skeleton only (`platform/`) — not operable without licensing |
 
 ## Tech stack
 
-- **Java 21** (Swing), **Java 17** (libGDX/Android)
-- **Gradle** multi-module: `core`, `swing`, `gdx-core`, `gdx-desktop`, `android`
+- **Java 21** (Swing / platform), **Java 17 bytecode** (core / libGDX / Android)
+- **Gradle** multi-module: `core`, `swing`, `gdx-core`, `gdx-desktop`, `android`, `platform`
 - **libGDX 1.12.1**, **JUnit 5**, **GitHub Actions**
 
 ## Layout
@@ -75,16 +78,17 @@ swing/         Desktop UI, plugins, media, Steam bridge
 gdx-core/      libGDX game + TableScreen
 gdx-desktop/   LWJGL3 launcher
 android/       APK launcher
-platform/      Online real-money platform skeleton (design; see docs/architecture)
+platform/      Online real-money platform skeleton (design + reference impls)
 resources/     Shared assets (deck, lang, css)
 docs/          Architecture decision records
+RELEASE.md     Desktop cut checklist
 ```
 
 ## Security & online platform (design)
 
 A security audit of the desktop build and the fixes applied are documented in [`AUDIT.md`](AUDIT.md) — hardened plugin loading (SHA-256 allow-list), a per-user data directory, a `SecureRandom` shoe, and dependency/CI hardening.
 
-An early, compliance-first design for an online **real-money** (including crypto) platform lives under [`platform/`](platform/README.md), with the rationale in [`docs/architecture/ADR-0001-real-money-crypto-platform.md`](docs/architecture/ADR-0001-real-money-crypto-platform.md). It is interface stubs plus reference implementations of the fail-closed compliance gate, the double-entry wallet, and a server-authoritative round — **not operable without state licensing, FinCEN MSB registration, and gaming-law counsel.**
+An early, compliance-first design for an online **real-money** (including crypto) platform lives under [`platform/`](platform/README.md), with the rationale in [`docs/architecture/ADR-0001-real-money-crypto-platform.md`](docs/architecture/ADR-0001-real-money-crypto-platform.md). It includes a fail-closed compliance gate, double-entry wallet (in-memory), file audit log, provably-fair RNG reference, and a server-authoritative round service — **not operable without state licensing, FinCEN MSB registration, and gaming-law counsel.**
 
 ## License
 
