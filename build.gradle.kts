@@ -68,3 +68,18 @@ allprojects {
         systemProperty("file.encoding", "UTF-8")
     }
 }
+
+// In-process tests: Gradle worker protocol flakes in this sandbox.
+subprojects {
+    tasks.withType<Test>().configureEach {
+        maxParallelForks = 1
+        forkEvery = 0
+        // Prefer forking once with larger heap over multi-worker protocol
+        jvmArgs("-Xmx512m")
+        testLogging {
+            events("failed", "passed", "skipped")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showStandardStreams = true
+        }
+    }
+}

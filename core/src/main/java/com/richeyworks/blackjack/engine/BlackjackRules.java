@@ -39,11 +39,13 @@ public final class BlackjackRules {
      * Rounds up: a $25 natural pays 38, not 37 (true value 37.50).
      */
     public int blackjackPayout(int bet) {
+        if (bet < 0) return 0;
         return payUp(bet, blackjackPayoutNum, blackjackPayoutDen);
     }
 
     /** Insurance winnings, excluding the returned premium. 2:1 is always exact. */
     public int insurancePayout(int insuranceBet) {
+        if (insuranceBet < 0) return 0;
         return payUp(insuranceBet, insurancePayoutNum, insurancePayoutDen);
     }
 
@@ -53,6 +55,7 @@ public final class BlackjackRules {
      * charging less. Centralised because the engine both offers and collects it.
      */
     public int insurancePremium(int bet) {
+        if (bet <= 0) return 0;
         return bet / 2;
     }
 
@@ -62,16 +65,26 @@ public final class BlackjackRules {
      * coming back to the player, so it rounds their way like the payouts.
      */
     public int surrenderRefund(int bet) {
+        if (bet <= 0) return 0;
         return payUp(bet, 1, 2);
     }
+
 
     /**
      * {@code ceil(amount * num / den)} computed in {@code long} so a large bet
      * cannot overflow the multiplication before the division brings it back
-     * into range.
+     * into range. Saturates at {@link Integer#MAX_VALUE} so a cast never wraps
+     * to a negative winnings figure (which used to make {@code credit} skip the
+     * payout entirely on a natural above ~1.43e9).
      */
     private static int payUp(int amount, int num, int den) {
-        if (den == 0) return 0;
-        return (int) (((long) amount * num + den - 1) / den);
+        if (amount <= 0 || num < 0) return 0;
+        if (den <= 0) {
+            throw new IllegalStateException("payout denominator must be positive, was " + den);
+        }
+        long raw = ((long) amount * num + den - 1) / den;
+        if (raw > Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        return (int) raw;
     }
+
 }

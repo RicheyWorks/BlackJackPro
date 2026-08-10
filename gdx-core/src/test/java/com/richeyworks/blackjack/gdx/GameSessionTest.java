@@ -82,6 +82,24 @@ class GameSessionTest {
                 "being backgrounded mid-bet must not cost the player chips");
     }
 
+    /**
+     * 21+3 lives outside the engine (in TableScreen's SideBetManager). The stake
+     * is debited from the bankroll at placement; if a pause saves without
+     * refunding it first, the chips vanish — the new process has pending=0.
+     * TableScreen.persistSafely() is what closes that hole; this documents the
+     * money shape the screen has to reverse.
+     */
+    @Test void aSideBetStakeAlreadyDebitedMustBeRefundedBeforeSave(@TempDir Path dir) {
+        GameSession s = new GameSession(platform(dir));
+        // Simulate: side bet took $25 off the bankroll, main bet still open.
+        s.engine().setBankroll(s.engine().bankroll() - 25);
+        // What persist() alone would write (without the screen refunding first):
+        s.persist();
+        assertEquals(GameSession.STARTING_BANKROLL - 25,
+                new GameSession(platform(dir)).engine().bankroll(),
+                "without a refund the reduced bankroll is what survives — the screen must undo this");
+    }
+
     @Test void aHandAlreadyInPlayIsLeftAlone(@TempDir Path dir) {
         GameSession s = new GameSession(platform(dir));
         s.engine().addBet(100);
@@ -98,7 +116,8 @@ class GameSessionTest {
         GameSession s = new GameSession(platform(dir));
         s.engine().setBankroll(1234);
         // pause() fires on every task switch, so this runs constantly.
-        for (int i = 0; i < 5; i++) assertDoesNotThrow(s::persist);
+        for (int i = 0; i < 5; i++) assertDoesNotThrow(() -> s.persist());
+
         assertEquals(1234, new GameSession(platform(dir)).engine().bankroll());
     }
 
@@ -158,7 +177,8 @@ class GameSessionTest {
         Path nested = dir.resolve("does").resolve("not").resolve("exist");
         GameSession s = new GameSession(platform(nested));
         s.engine().setBankroll(500);
-        assertDoesNotThrow(s::persist);
+        assertDoesNotThrow(() -> s.persist());
+
         assertEquals(500, new GameSession(platform(nested)).engine().bankroll());
     }
 

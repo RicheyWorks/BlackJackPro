@@ -122,6 +122,36 @@ class GameSessionRulesTest {
         assertEquals(Phase.BETTING, s.engine().phase());
     }
 
+    @Test void resetAbandonsALiveHand(@TempDir Path dir) {
+        // The regression: New Session mid-round used to leave PLAYER phase with
+        // cards still dealt while bankroll snapped to $1000.
+        GameSession s = new GameSession(platform(dir));
+        s.engine().addBet(100);
+        s.engine().deal();
+        if (s.engine().phase() == Phase.INSURANCE) s.engine().takeInsurance(false);
+        if (s.engine().phase() == Phase.BETTING) {
+            // Instant settle (naturals) — still a valid abandon target next deal.
+            s.engine().addBet(50);
+            s.engine().deal();
+            if (s.engine().phase() == Phase.INSURANCE) s.engine().takeInsurance(false);
+        }
+        if (s.engine().phase() != Phase.PLAYER && s.engine().phase() != Phase.INSURANCE) {
+            return; // unlucky seeds; abandonRound is covered in EngineTest
+        }
+
+        s.reset();
+
+        assertEquals(Phase.BETTING, s.engine().phase());
+        assertTrue(s.engine().hands().get(0).isEmpty());
+        assertTrue(s.engine().dealer().isEmpty());
+        assertEquals(0, s.engine().pendingBet());
+        assertEquals(GameSession.STARTING_BANKROLL, s.engine().bankroll());
+        assertEquals(GameSession.STARTING_BANKROLL, s.engine().stats().peakBankroll);
+        assertFalse(s.engine().canHit());
+        s.engine().addBet(25);
+        assertTrue(s.engine().canDeal(), "player must be able to deal after reset");
+    }
+
     @Test void resetIsDurableWithoutWaitingForAPause(@TempDir Path dir) {
         GameSession first = new GameSession(platform(dir));
         first.engine().setBankroll(9999);

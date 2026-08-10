@@ -74,17 +74,45 @@ public final class GameSession {
      * would be at a real table.
      */
     public void persist() {
-        engine.clearBet();
+        persist(true);
+    }
+
+    /**
+     * @param refundPending when true (pause/kill path), chips on the felt are
+     *                      folded back into bankroll before save so they cannot
+     *                      vanish. When false (theme/sfx tweak while the menu is
+     *                      open), the felt stake is left alone so the player
+     *                      returns to the same bet.
+     */
+    public void persist(boolean refundPending) {
+        if (refundPending) {
+            engine.clearBet();
+        }
         save.save(engine);
         settings.save();
         achievements.save();
     }
 
-    /** Reset to a fresh session and persist immediately. */
+    /** Settings + achievements only — never touches pending chips. */
+    public void persistSettings() {
+        settings.save();
+        achievements.save();
+    }
+
+
+    /**
+     * Reset to a fresh session and persist immediately.
+     *
+     * <p>Must clear a live hand as well as chips on the felt. A previous
+     * implementation only called {@link Engine#clearBet()} (a no-op mid-round)
+     * and overwrote the bankroll, so "New Session" during play left
+     * {@code phase == PLAYER}, Deal disabled, and a free $1000 sitting next to
+     * a still-payable hand.
+     */
     public void reset() {
-        engine.clearBet();
-        engine.setBankroll(STARTING_BANKROLL);
+        engine.abandonRound();             // BETTING, empty table; forfeits in-hand stakes
         engine.stats().reset();
+        engine.setBankroll(STARTING_BANKROLL);  // also lifts peak to the new start
         engine.shoe().reshuffle();
         persist();
     }
@@ -127,9 +155,10 @@ public final class GameSession {
                 engine.rules().offerInsurance = enabled;
                 break;
         }
-        persist();
+        persist(false); // rules change must not clear chips already on the felt
         return true;
     }
+
 
     /** Current value of a rule, read from the engine (the authority in play). */
     public boolean rule(Rule rule) {

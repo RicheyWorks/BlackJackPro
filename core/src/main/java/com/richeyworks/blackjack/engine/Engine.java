@@ -45,16 +45,16 @@ public final class Engine {
 
     public Engine(int startingBankroll, Random rng, BlackjackRules rules) {
         this.rules    = rules;
-        this.bankroll = startingBankroll;
+        this.bankroll = Math.max(0, startingBankroll);
         this.shoe     = new Shoe(rules.decks, rng, rules.penetration);
         this.player.add(new Hand());
-        stats.peakBankroll = Math.max(stats.peakBankroll, startingBankroll);
+        stats.peakBankroll = Math.max(stats.peakBankroll, bankroll);
     }
 
     public BlackjackRules rules()      { return rules; }
     public Shoe           shoe()       { return shoe; }
     public Hand           dealer()     { return dealer; }
-    public List<Hand>     hands()      { return player; }
+    public List<Hand>     hands()      { return Collections.unmodifiableList(player); }
     public Hand           active()     { return player.get(activeHand); }
     public int            activeIndex(){ return activeHand; }
     public SessionStats   stats()      { return stats; }
@@ -84,11 +84,22 @@ public final class Engine {
      */
     public int lastNet() { return lastNet; }
 
-    public void setBankroll(int b) { this.bankroll = b; }
+    public void setBankroll(int b) {
+        // Saves clamp on load; the live API must too — a negative bankroll
+        // makes canBet/canInsure nonsense and paints "-$N" in the HUD.
+        this.bankroll = Math.max(0, b);
+        // Keep peak honest after a reload / new-session bankroll write. Stats
+        // reset() zeroes the peak first; without this lift a fresh $1000 table
+        // reports peak $0 until the first hand settles.
+        stats.peakBankroll = Math.max(stats.peakBankroll, bankroll);
+    }
 
     public boolean canBet(int amount) {
-        return phase == Phase.BETTING && amount > 0 && amount <= bankroll;
+        if (phase != Phase.BETTING || amount <= 0 || amount > bankroll) return false;
+        // Refuse chip clicks that would wrap pendingBet.
+        return pendingBet <= Integer.MAX_VALUE - amount;
     }
+
     public boolean canDeal()        { return phase == Phase.BETTING && pendingBet > 0; }
 
     /*
@@ -114,10 +125,19 @@ public final class Engine {
         Hand h = active();
         return !h.isBust() && !h.stood() && !h.splitAce() && h.value() < 21;
     }
-    public boolean canStand()       { return phase == Phase.PLAYER && !active().isBust(); }
+    public boolean canStand() {
+        if (phase != Phase.PLAYER) return false;
+        Hand h = active();
+        // stood hands have already acted; allowing stand again would advance
+        // past them a second time if anything left the cursor on a finished hand.
+        return !h.isBust() && !h.stood() && !h.surrendered();
+    }
     public boolean canDouble() {
         if (phase != Phase.PLAYER) return false;
         Hand h = active();
+        // bet*2 must fit in an int — otherwise doubleBet() overflows to a
+        // negative stake and settle() pays the house into the player's pocket.
+        if (h.bet() > Integer.MAX_VALUE / 2) return false;
         return h.size() == 2 && bankroll >= h.bet() && !h.splitAce()
                 && (player.size() == 1 || rules.doubleAfterSplit);
     }
@@ -134,23 +154,64 @@ public final class Engine {
                 && !h.fromSplit() && !h.doubled();
     }
 
-    /** True iff insurance is offered and the player can afford the half-bet premium. */
+    /** True iff insurance is offered, costs a real premium, and the player can pay it. */
     public boolean canInsure() {
-        return phase == Phase.INSURANCE && !player.isEmpty()
-                && bankroll >= rules.insurancePremium(player.get(0).bet());
+        if (phase != Phase.INSURANCE || player.isEmpty()) return false;
+        int premium = rules.insurancePremium(player.get(0).bet());
+        // $1 main bets round the premium to $0. Offering "free" insurance lights
+        // the Insure button for a pure no-op and confuses a broke all-in player.
+        return premium > 0 && bankroll >= premium;
     }
 
     public void addBet(int amount) {
         if (!canBet(amount)) throw new IllegalStateException("cannot bet " + amount);
+        // pendingBet can grow across chip clicks — refuse wrap rather than deal free.
+        if (pendingBet > Integer.MAX_VALUE - amount) {
+            throw new IllegalStateException("pending bet overflow");
+        }
         bankroll  -= amount;
         pendingBet += amount;
     }
 
     public void clearBet() {
         if (phase != Phase.BETTING) return;
-        bankroll  += pendingBet;
+        creditBankrollOnly(pendingBet);
         pendingBet = 0;
     }
+
+
+    /**
+     * Force the table back to a clean {@link Phase#BETTING} state, discarding
+     * any in-progress hands, insurance, and round bookkeeping.
+     *
+     * <p>Chips still sitting on the felt as {@link #pendingBet()} are returned
+     * to the bankroll — they were never risked on a dealt hand. In-hand stakes
+     * (cards already out) are <em>not</em> refunded; the caller owns the
+     * bankroll after that (typically overwriting it for a new session).
+     *
+     * <p>Without this, a mid-round "New Session" left {@code phase == PLAYER},
+     * a live hand with its old bet, and Deal disabled, while
+     * {@code setBankroll(1000)} handed free chips on top of a hand that could
+     * still be played and paid.
+     */
+    public void abandonRound() {
+        // Return undelt chips. Zeroing pending without this line destroyed them
+        // whenever a caller abandoned during betting without a later setBankroll.
+        creditBankrollOnly(pendingBet);
+        pendingBet   = 0;
+        for (Hand h : player) h.reset();
+        player.clear();
+        player.add(new Hand());
+        dealer.reset();
+        activeHand   = 0;
+        insuranceBet = 0;
+        lastOutcomes.clear();
+        roundWagered  = 0;
+        roundReturned = 0;
+        lastNet       = 0;
+        phase = Phase.BETTING;
+    }
+
 
     public void deal() {
         if (!canDeal()) throw new IllegalStateException("cannot deal");
@@ -166,8 +227,7 @@ public final class Engine {
         dealer.reset();
         Hand first = new Hand();
         first.bet(pendingBet);
-        stats.totalWagered += first.bet();
-        roundWagered += first.bet();
+        recordWager(first.bet());
         pendingBet = 0;
         player.add(first);
         activeHand   = 0;
@@ -194,10 +254,11 @@ public final class Engine {
             // Same source as canInsure(): computing the premium in two places is
             // how the offer and the charge drift apart.
             int cost = rules.insurancePremium(h.bet());
+            // Zero premium is not coverage — refuse rather than pretend.
+            if (cost <= 0) throw new IllegalStateException("insurance premium is zero");
             if (bankroll < cost) throw new IllegalStateException("not enough chips for insurance");
             bankroll    -= cost;
-            stats.totalWagered += cost;   // insurance is a wager; keep accounting consistent
-            roundWagered += cost;
+            recordWager(cost);
             insuranceBet = cost;
         } else {
             insuranceBet = 0;
@@ -209,10 +270,8 @@ public final class Engine {
         boolean dealerBJ = dealer.value() == 21 && dealer.size() == 2;
         if (dealerBJ) {
             if (insuranceBet > 0) {
-                int payout = insuranceBet + rules.insurancePayout(insuranceBet);
-                bankroll  += payout;
-                stats.totalReturned += payout;
-                roundReturned += payout;
+                int payout = addExact(insuranceBet, rules.insurancePayout(insuranceBet));
+                credit(payout);
             }
             insuranceBet = 0;
             phase = Phase.SETTLE;
@@ -247,8 +306,7 @@ public final class Engine {
         if (!canDouble()) throw new IllegalStateException("cannot double");
         Hand h = active();
         bankroll -= h.bet();
-        stats.totalWagered += h.bet();
-        roundWagered += h.bet();
+        recordWager(h.bet());
         h.doubleBet();
         stats.doubles++;
         h.add(shoe.deal());
@@ -264,8 +322,7 @@ public final class Engine {
         n.markFromSplit();
         h.markFromSplit();
         bankroll -= h.bet();
-        stats.totalWagered += h.bet();
-        roundWagered += h.bet();
+        recordWager(h.bet());
         stats.splits++;
         player.add(activeHand + 1, n);
 
@@ -289,9 +346,7 @@ public final class Engine {
         h.surrender();
         stats.surrenders++;
         int refund = rules.surrenderRefund(h.bet());
-        bankroll  += refund;
-        stats.totalReturned += refund;
-        roundReturned += refund;
+        credit(refund);
         phase = Phase.SETTLE;
         settle();
     }
@@ -346,20 +401,16 @@ public final class Engine {
                 continue;
             }
             if (h.isBlackjack() && !dealerBJ) {
-                int payout = h.bet() + rules.blackjackPayout(h.bet());
-                bankroll          += payout;
-                stats.totalReturned += payout;
-                roundReturned += payout;
+                int payout = addExact(h.bet(), rules.blackjackPayout(h.bet()));
+                credit(payout);
+                lastOutcomes.add(Outcome.BLACKJACK);
                 stats.wins++;
                 stats.blackjacks++;
-                lastOutcomes.add(Outcome.BLACKJACK);
                 continue;
             }
             if (dealerBJ) {
                 if (h.isBlackjack()) {
-                    bankroll        += h.bet();
-                    stats.totalReturned += h.bet();
-                    roundReturned += h.bet();
+                    credit(h.bet());
                     stats.pushes++;
                     lastOutcomes.add(Outcome.PUSH);
                 } else {
@@ -370,16 +421,13 @@ public final class Engine {
             }
             int pv = h.value();
             if (dv > 21 || pv > dv) {
-                int payout = h.bet() * 2;
-                bankroll          += payout;
-                stats.totalReturned += payout;
-                roundReturned += payout;
+                // Even money via long math — bet*2 overflows int above ~1.07e9
+                // and used to credit a *negative* payout.
+                credit(evenMoneyReturn(h.bet()));
                 stats.wins++;
                 lastOutcomes.add(Outcome.WIN);
             } else if (pv == dv) {
-                bankroll        += h.bet();
-                stats.totalReturned += h.bet();
-                roundReturned += h.bet();
+                credit(h.bet());
                 stats.pushes++;
                 lastOutcomes.add(Outcome.PUSH);
             } else {
@@ -389,6 +437,52 @@ public final class Engine {
         }
         stats.peakBankroll = Math.max(stats.peakBankroll, bankroll);
         lastNet = roundReturned - roundWagered;
+        // Point activeHand back at a live hand. advanceHand() leaves it one past
+        // the end so can*() must phase-guard — but active() itself was still a
+        // footgun: any post-round call (debug HUD, plugin, future UI) threw
+        // IndexOutOfBoundsException while phase was already BETTING.
+        activeHand = 0;
         phase = Phase.BETTING;
+    }
+
+    /** Stake + even-money win, saturating at {@link Integer#MAX_VALUE}. */
+    private static int evenMoneyReturn(int bet) {
+        long p = (long) bet * 2L;
+        return p > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) p;
+    }
+
+    private static int addExact(int a, int b) {
+        long s = (long) a + b;
+        return s > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) s;
+    }
+
+    /** Record a wager without wrapping totalWagered / roundWagered. */
+    private void recordWager(int amount) {
+        if (amount <= 0) return;
+        long tw = (long) stats.totalWagered + amount;
+        stats.totalWagered = tw >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tw;
+        long rw = (long) roundWagered + amount;
+        roundWagered = rw >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) rw;
+    }
+
+    /** Return chips to bankroll without touching session wagered/returned ledgers. */
+    private void creditBankrollOnly(int amount) {
+        if (amount <= 0) return;
+        long b = (long) bankroll + amount;
+        bankroll = b >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) b;
+        stats.peakBankroll = Math.max(stats.peakBankroll, bankroll);
+    }
+
+    /**
+     * Credit chips to the player and the round ledger without int wrap.
+     * A saturated credit is better than a negative bankroll after a win.
+     */
+    private void credit(int amount) {
+        if (amount <= 0) return;
+        creditBankrollOnly(amount);
+        long tr = (long) stats.totalReturned + amount;
+        stats.totalReturned = tr >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tr;
+        long rr = (long) roundReturned + amount;
+        roundReturned = rr >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) rr;
     }
 }

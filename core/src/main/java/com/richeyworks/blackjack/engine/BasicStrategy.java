@@ -41,11 +41,14 @@ public final class BasicStrategy {
             int t = hand.value();
             switch (t) {
                 case 20: return Action.S;
-                case 19: return (twoCard && dv == 6) ? Action.D : Action.S;
+                // Soft 19 (A,8): multi-deck S17 charts always stand. Doubling
+                // vs 6 is an H17 / single-deck variant — wrong for this table.
+                case 19: return Action.S;
                 case 18:
                     if (twoCard && dv >= 3 && dv <= 6) return Action.D;  // double vs 3-6 (2 cards)
                     if (dv <= 8) return Action.S;                        // stand vs 2,7,8 (and 3-6 w/ 3+ cards)
                     return Action.H;                                     // hit vs 9,10,A
+
                 case 17: return (twoCard && dv >= 3 && dv <= 6) ? Action.D : Action.H;
                 case 16:
                 case 15: return (twoCard && dv >= 4 && dv <= 6) ? Action.D : Action.H;

@@ -50,11 +50,14 @@ public final class BlackJackGame extends Game {
         this.palette = new GdxPalette(p);
         if (session != null) {
             session.settings().themeId = p.id();
-            session.persist();
+            // Settings only — a full persist() clearBet() would wipe chips the
+            // player staged before opening the menu to change theme.
+            session.persistSettings();
         }
         // Crewed themes change who sits at the table, not just the felt.
         if (table != null) table.seatCast(p.id());
     }
+
 
     @Override
     public void create() {
@@ -72,13 +75,14 @@ public final class BlackJackGame extends Game {
     /**
      * Android calls this on every task switch, incoming call, and screen-off,
      * and it is the last callback guaranteed to run before the process may be
-     * killed — {@code dispose()} frequently never arrives. Saving here is what
-     * makes progress survive on mobile.
+     * killed — {@code dispose()} frequently never arrives. Saving is the
+     * screen's job ({@link TableScreen} refunds pending 21+3 before writing);
+     * doing it here <em>before</em> the screen ran left a window where a
+     * mid-side-bet pause wrote the reduced bankroll first.
      */
     @Override
     public void pause() {
-        super.pause();          // forwards to the active Screen
-        if (session != null) session.persist();
+        super.pause();          // forwards to the active Screen's persist path
     }
 
     /**
@@ -87,11 +91,14 @@ public final class BlackJackGame extends Game {
      * <p>{@code Game.dispose()} only calls {@code hide()} on the current screen —
      * it never disposes any of them — so every screen's GL resources have to be
      * released explicitly or they leak.
+     *
+     * <p>Do not {@code session.persist()} before the table has run: the side-bet
+     * stake lives in {@link TableScreen}, and a pre-refund save was a second
+     * path to the same chip-loss bug as a mid-bet background.
      */
     @Override
     public void dispose() {
-        if (session != null) session.persist();
-        super.dispose();            // hides the active screen
+        super.dispose();            // hides the active screen (persistSafely if table)
         if (table != null) table.dispose();   // and disposes the menu it owns
         sfx.dispose();
     }

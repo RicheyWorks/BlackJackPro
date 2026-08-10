@@ -21,7 +21,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *       {@link #reconcile()} proves the index and the ledger still agree.</li>
  *   <li><b>Zero-sum</b> — every {@link #post} must net to zero per asset, or it is rejected.</li>
  *   <li><b>Idempotency</b> — a posting (or hold) replayed with the same idempotency key is a
- *       no-op and returns the original transaction id.</li>
+ *       no-op and returns the original transaction id. A replay with a <em>different</em>
+ *       amount/player/asset is rejected — silent success would lie about money that never moved.</li>
  *   <li><b>Hold safety</b> — {@link #hold} fails if available funds are insufficient.</li>
  *   <li><b>Checked arithmetic</b> — every sum uses {@link Math#addExact}, so a balance that
  *       would exceed the signed 64-bit range throws instead of wrapping to a negative
@@ -57,6 +58,13 @@ public final class InMemoryWallet implements Wallet {
      * that was never applied at all.
      */
     private final Map<String, String> legsByIdempotencyKey = new HashMap<>();
+    /**
+     * hold key -> fingerprint of (player, asset, amount). Holds used to short-circuit
+     * on {@link #txByIdempotencyKey} alone, so a second hold with the same key but a
+     * different stake reported success and moved nothing — free money if the service
+     * then opened a larger round.
+     */
+    private final Map<String, String> holdByIdempotencyKey = new HashMap<>();
     private final AtomicLong seq = new AtomicLong();
 
     /** Account, asset and amount of every leg, in a stable order. */
@@ -65,6 +73,10 @@ public final class InMemoryWallet implements Wallet {
         for (LedgerEntry e : legs) parts.add(e.account() + "|" + e.asset() + "|" + e.amountMinor());
         parts.sort(null);
         return String.join(",", parts);
+    }
+
+    private static String holdFingerprint(String playerId, Asset asset, long amountMinor) {
+        return playerId + "|" + asset + "|" + amountMinor;
     }
 
     /**
@@ -99,8 +111,31 @@ public final class InMemoryWallet implements Wallet {
     @Override
     public synchronized String hold(String playerId, Asset asset, long amountMinor, String idempotencyKey) {
         if (amountMinor <= 0) throw new IllegalArgumentException("hold amount must be positive");
-        String existing = txByIdempotencyKey.get(idempotencyKey);
-        if (existing != null) return existing;                       // idempotent replay
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(asset, "asset");
+        Objects.requireNonNull(idempotencyKey, "idempotencyKey");
+        if (idempotencyKey.isBlank()) throw new IllegalArgumentException("hold needs a non-blank idempotency key");
+
+        String holdFp = holdFingerprint(playerId, asset, amountMinor);
+        String seenHold = holdByIdempotencyKey.get(idempotencyKey);
+        if (seenHold != null) {
+            if (!seenHold.equals(holdFp)) {
+                throw new IllegalArgumentException("idempotency key " + idempotencyKey
+                        + " was already used for a different hold; replaying it would"
+                        + " report success for a stake that was never escrowed");
+            }
+            String existing = txByIdempotencyKey.get(idempotencyKey);
+            if (existing == null) {
+                throw new IllegalStateException("hold key " + idempotencyKey + " has a fingerprint but no tx");
+            }
+            return existing; // genuine hold replay
+        }
+
+        // Key already used by a post() that was not a hold of this shape.
+        if (txByIdempotencyKey.containsKey(idempotencyKey)) {
+            throw new IllegalArgumentException("idempotency key " + idempotencyKey
+                    + " was already used for a different posting");
+        }
 
         long available = availableMinor(playerId, asset);
         if (available < amountMinor) {
@@ -112,6 +147,8 @@ public final class InMemoryWallet implements Wallet {
                 new LedgerEntry("e-" + seq.incrementAndGet(), txId, availableAccount(playerId), asset, -amountMinor, idempotencyKey, now),
                 new LedgerEntry("e-" + seq.incrementAndGet(), txId, escrowAccount(playerId),    asset,  amountMinor, idempotencyKey, now));
         post(legs);
+        // Only record after a successful post so a failed post leaves the key free.
+        holdByIdempotencyKey.put(idempotencyKey, holdFp);
         return txId;
     }
 
