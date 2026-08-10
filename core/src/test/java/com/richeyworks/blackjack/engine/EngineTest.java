@@ -126,4 +126,101 @@ class EngineTest {
         s.reset();
         assertEquals(0, s.peakBankroll, "reset clears the peak");
     }
+
+    @Test void abandonRoundClearsALiveHandBackToBetting() {
+        Engine e = new Engine(1000, new Random(7));
+        e.addBet(50);
+        e.deal();
+        if (e.phase() == Phase.INSURANCE) e.takeInsurance(false);
+        if (e.phase() != Phase.PLAYER) return;
+
+        e.abandonRound();
+        e.stats().reset();
+        e.setBankroll(1000);
+
+        assertEquals(Phase.BETTING, e.phase());
+        assertEquals(0, e.pendingBet());
+        assertEquals(1, e.hands().size());
+        assertTrue(e.hands().get(0).isEmpty());
+        assertTrue(e.dealer().isEmpty());
+        assertTrue(e.lastOutcomes().isEmpty());
+        assertEquals(0, e.lastNet());
+        assertFalse(e.canHit());
+        assertFalse(e.canStand());
+        assertEquals(1000, e.bankroll());
+        assertEquals(1000, e.stats().peakBankroll);
+
+        e.addBet(25);
+        assertTrue(e.canDeal());
+        e.deal();
+        assertTrue(e.phase() == Phase.PLAYER
+                || e.phase() == Phase.INSURANCE
+                || e.phase() == Phase.BETTING);
+    }
+
+    @Test void activeHandIsUsableAfterSettlement() {
+        Engine e = new Engine(1000, new Random(5));
+        e.addBet(10);
+        e.deal();
+        if (e.phase() == Phase.INSURANCE) e.takeInsurance(false);
+        while (e.phase() == Phase.PLAYER) {
+            if (e.canStand()) e.stand();
+            else if (e.canHit()) e.hit();
+            else break;
+        }
+        assertEquals(Phase.BETTING, e.phase());
+        assertDoesNotThrow(e::active);
+        assertEquals(0, e.activeIndex());
+        assertFalse(e.active().isEmpty());
+    }
+
+    @Test void canStandIsFalseOnceTheHandHasStood() {
+        Engine e = new Engine(1000, new Random(1));
+        e.addBet(10);
+        e.deal();
+        if (e.phase() == Phase.INSURANCE) e.takeInsurance(false);
+        if (e.phase() != Phase.PLAYER) return;
+        e.active().stand();
+        assertFalse(e.canStand(), "a stood hand must not accept another stand");
+    }
+
+    @Test void evenMoneyPayoutDoesNotOverflowInt() {
+        Engine e = new Engine(2_000_000_000, new Random(6));
+        e.addBet(1_200_000_000);
+        e.deal();
+        if (e.phase() == Phase.INSURANCE) e.takeInsurance(false);
+        while (e.phase() == Phase.PLAYER) {
+            if (e.canStand()) e.stand();
+            else if (e.canHit()) e.hit();
+            else break;
+        }
+        if (e.lastOutcomes().contains(Outcome.WIN)) {
+            assertTrue(e.bankroll() > 0, "winning must not produce a negative bankroll");
+            assertTrue(e.lastNet() > 0, "a pure WIN must report a positive net");
+        }
+    }
+
+    @Test void abandonRoundRefundsPendingChipsOnTheFelt() {
+        Engine e = new Engine(1000, new Random(1));
+        e.addBet(150);
+        assertEquals(850, e.bankroll());
+        e.abandonRound();
+        assertEquals(0, e.pendingBet());
+        assertEquals(1000, e.bankroll(), "undelt chips must return when the round is abandoned");
+        assertEquals(Phase.BETTING, e.phase());
+    }
+
+    @Test void clearBetAloneDoesNotFixALiveHand() {
+        Engine e = new Engine(1000, new Random(7));
+        e.addBet(50);
+        e.deal();
+        if (e.phase() == Phase.INSURANCE) e.takeInsurance(false);
+        if (e.phase() != Phase.PLAYER) return;
+
+        e.clearBet();
+        e.setBankroll(1000);
+        assertEquals(Phase.PLAYER, e.phase(), "clearBet is a no-op mid-round");
+        assertFalse(e.canDeal());
+        assertTrue(e.canHit() || e.canStand());
+    }
 }

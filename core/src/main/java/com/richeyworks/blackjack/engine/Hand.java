@@ -35,8 +35,20 @@ public final class Hand {
 
     /* ---------- bet ---------- */
     public int  bet()                 { return bet; }
-    public void bet(int amount)       { this.bet = amount; }
-    public void doubleBet()           { this.bet *= 2; this.doubled = true; }
+    public void bet(int amount) {
+        if (amount < 0) throw new IllegalArgumentException("bet cannot be negative: " + amount);
+        this.bet = amount;
+    }
+
+    public void doubleBet() {
+        // Engine.canDouble() already refuses bets that would overflow; this is
+        // the last line of defence if anything else calls doubleBet directly.
+        if (bet > Integer.MAX_VALUE / 2) {
+            throw new IllegalStateException("bet too large to double: " + bet);
+        }
+        this.bet *= 2;
+        this.doubled = true;
+    }
 
     /* ---------- flags ---------- */
     public boolean doubled()     { return doubled; }

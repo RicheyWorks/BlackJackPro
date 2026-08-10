@@ -40,6 +40,7 @@ public final class TwentyOnePlusThree implements SideBet {
         if (playerCards == null || playerCards.size() < 2 || dealerUp == null) {
             last = "no eval"; return 0;
         }
+        if (bet <= 0) { last = "no win"; return 0; }
         Card a = playerCards.get(0), b = playerCards.get(1), c = dealerUp;
 
         boolean suited     = a.suit() == b.suit() && b.suit() == c.suit();
@@ -53,7 +54,10 @@ public final class TwentyOnePlusThree implements SideBet {
         else if (straight)             { last = "Straight";        multiplier =  10; }
         else if (suited)               { last = "Flush";           multiplier =   5; }
         else                           { last = "no win";          return 0; }
-        return bet + bet * multiplier;
+        // stake + stake*mult in long so suited trips at large stakes cannot wrap negative
+        long total = (long) bet + (long) bet * multiplier;
+        if (total > Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        return (int) total;
     }
 
     private static boolean isStraight(Card a, Card b, Card c) {

@@ -1,7 +1,6 @@
 package com.richeyworks.blackjack.ui.swing;
 
 import com.richeyworks.blackjack.achievement.AchievementService;
-import com.richeyworks.blackjack.engine.Card;
 import com.richeyworks.blackjack.engine.Engine;
 import com.richeyworks.blackjack.engine.Outcome;
 import com.richeyworks.blackjack.engine.Phase;
@@ -14,6 +13,7 @@ import com.richeyworks.blackjack.plugin.PluginRegistry;
 import com.richeyworks.blackjack.sidebet.SideBetManager;
 import com.richeyworks.blackjack.plugin.TableTheme;
 import com.richeyworks.blackjack.strategy.HiLoCounter;
+import com.richeyworks.blackjack.strategy.TableObservation;
 import com.richeyworks.blackjack.settings.GameSettings;
 import com.richeyworks.blackjack.steam.SteamBridge;
 import com.richeyworks.blackjack.table.TableChatter;
@@ -71,7 +71,6 @@ public final class BlackJackProApp extends JFrame {
 
     private int processedHands;   // rounds already post-processed (round-complete detection)
     private int winStreak;        // consecutive winning rounds (streak achievement)
-    private int observedCards;    // cards already fed to the Hi-Lo counter this round
 
     private final AtomicBoolean shutdownDone = new AtomicBoolean();
     private Thread shutdownHook;
@@ -80,8 +79,15 @@ public final class BlackJackProApp extends JFrame {
     private String lastResult = "";
     /** True while the out-of-chips prompt is up, to stop it stacking. */
     private boolean reloadPrompted;
+    /**
+     * Sticky "No" on the reload dialog. Without this, every refresh while
+     * broke re-opens the modal (reloadPrompted only covered re-entry during
+     * the dialog itself), so declining once was not enough.
+     */
+    private boolean reloadDeclined;
     /** Single reusable timer behind {@link #flash(String)}. */
     private Timer flashTimer;
+
 
     /**
      * The characters at the table. They talk; they never play a hand. Not
@@ -108,8 +114,7 @@ public final class BlackJackProApp extends JFrame {
     private final JLabel sideLabel = new JLabel();
     private final SideBetManager sideBets;
     private String sideMsg = "";
-    private final HiLoCounter counter;
-    private int lastShoeRemaining;
+    private final TableObservation observation;
     private boolean showCount = true;
     private final JLabel countLabel = new JLabel();
 
@@ -147,9 +152,9 @@ public final class BlackJackProApp extends JFrame {
                 plugins.sideBets().isEmpty() ? null : plugins.sideBets().get(0));
         // Owned directly rather than fished out of the plugin list: counting is
         // core logic now, so the display works whether or not a plugin ships an
-        // AI that happens to wrap it.
-        this.counter = new HiLoCounter();
-        this.lastShoeRemaining = engine.shoe().remaining();
+        // AI that happens to wrap it. TableObservation keys on card identity so
+        // a split cannot double-count the dealer's up-card.
+        this.observation = new TableObservation(new HiLoCounter());
         // Seat the cast that matches the saved theme, so a player who left on
         // Pirate Cove comes back to the same crew rather than the regulars.
         this.chatter = new TableChatter(
@@ -159,6 +164,12 @@ public final class BlackJackProApp extends JFrame {
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         save.load(engine);
         processedHands   = engine.stats().hands;
+        // Heart of Stone tracks a win streak. Progress is persisted, but the
+        // session counter used to start at 0 on every launch — setProgress(1)
+        // after the first win then no-op'd until the in-session streak beat the
+        // saved progress. Seed from the achievement so a 3/5 resume keeps working.
+        var streak = achievements.get("survived_bust_streak");
+        if (streak != null && !streak.unlocked()) winStreak = streak.progress();
         achievements.onUnlock(a -> {
             sfx.achievement();
             AchievementToast.show(this, a);
@@ -241,11 +252,12 @@ public final class BlackJackProApp extends JFrame {
 
         int refund = sideBets.clear();
         if (refund > 0) {
-            engine.setBankroll(engine.bankroll() + refund);
+            engine.setBankroll(saturatedBankroll(engine.bankroll(), refund));
             returned += refund;
         }
         return returned;
     }
+
 
     /** Exit cleanly, without waiting for the shutdown hook to do the saving. */
     private void quit() {
@@ -330,7 +342,7 @@ public final class BlackJackProApp extends JFrame {
         info.add(bankLabel); info.add(betLabel);
         if (sideBets.available()) info.add(sideLabel);
         info.add(shoeLabel);
-        if (counter != null) info.add(countLabel);
+        info.add(countLabel);
         c.gridy = 2;
         p.add(info, c);
 
@@ -366,13 +378,15 @@ public final class BlackJackProApp extends JFrame {
 
         JCheckBoxMenuItem countToggle = new JCheckBoxMenuItem("Show Hi-Lo count");
         countToggle.setState(showCount);
-        countToggle.setEnabled(counter != null);
         countToggle.addActionListener(e -> { showCount = countToggle.getState(); updateUi(statusBar.getText()); });
         JMenuItem mute = new JMenuItem(music.isMuted() ? "Unmute music" : "Mute music");
         mute.addActionListener(e -> {
             music.toggleMute();
+            settings.musicEnabled = !music.isMuted();
+            settings.save();
             mute.setText(music.isMuted() ? "Unmute music" : "Mute music");
         });
+
         JMenuItem nextTrack = new JMenuItem("Next track");
         nextTrack.addActionListener(e -> music.next());
         opts.add(prefs); opts.addSeparator(); opts.add(soft17Item); opts.add(countToggle);
@@ -540,9 +554,10 @@ public final class BlackJackProApp extends JFrame {
         if (engine.phase() != Phase.BETTING) return;
         engine.clearBet();
         int refund = sideBets.clear();
-        if (refund > 0) engine.setBankroll(engine.bankroll() + refund);
+        if (refund > 0) engine.setBankroll(saturatedBankroll(engine.bankroll(), refund));
         sideMsg = "";
         updateUi("Bet cleared.");
+
     }
 
     private void placeSideBet(int v) {
@@ -559,7 +574,6 @@ public final class BlackJackProApp extends JFrame {
     private void dealRound() {
         try {
             lastResult    = "";       // previous round's result leaves the status bar
-            observedCards = 0;        // the deal replaces every hand, so recount from zero
             engine.deal();
             resolveSideBet();
             sfx.cardSnap();
@@ -576,12 +590,23 @@ public final class BlackJackProApp extends JFrame {
         if (!sideBets.available() || sideBets.pending() == 0) return;
         int stake  = sideBets.pending();
         int payout = sideBets.resolve(engine.hands().get(0).cards(), engine.dealer().first());
-        engine.stats().totalWagered  += stake;
-        engine.stats().totalReturned += payout;
-        engine.setBankroll(engine.bankroll() + payout);
+        long tw = (long) engine.stats().totalWagered + stake;
+        engine.stats().totalWagered = tw >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tw;
+        long tr = (long) engine.stats().totalReturned + Math.max(0, payout);
+        engine.stats().totalReturned = tr >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tr;
+        engine.setBankroll(saturatedBankroll(engine.bankroll(), Math.max(0, payout)));
         if (payout > 0) { sfx.winSting(); sideMsg = "21+3 " + sideBets.lastOutcome() + ": +$" + (payout - stake); }
         else            { sideMsg = "21+3: no win (-$" + stake + ")"; }
     }
+
+    private static int saturatedBankroll(int bankroll, int delta) {
+        long s = (long) bankroll + delta;
+        if (s >= Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        if (s <= 0) return 0;
+        return (int) s;
+    }
+
+
 
     private void takeInsurance(boolean accept) {
         try {
@@ -628,7 +653,13 @@ public final class BlackJackProApp extends JFrame {
         boolean playerWon  = outcomes.stream().anyMatch(Outcome::isWin);
         boolean anyPush    = outcomes.contains(Outcome.PUSH);
         boolean naturalBJ  = outcomes.contains(Outcome.BLACKJACK);
-        boolean playerLost = !playerWon && !anyPush;
+        // A pure push keeps the streak; any loss (even beside a push on a split)
+        // breaks it. Using !won && !push left LOSS+PUSH as a "push" and kept
+        // Heart of Stone alive after a net-losing split.
+        boolean anyLoss    = outcomes.stream().anyMatch(o ->
+                o == Outcome.LOSS || o == Outcome.BUST || o == Outcome.SURRENDER);
+        boolean playerLost = anyLoss && !playerWon;
+
 
         lastResult = summarize(outcomes, engine.lastNet());
 
@@ -648,9 +679,12 @@ public final class BlackJackProApp extends JFrame {
         if (s.doubles > 0)  achievements.setProgress("first_double", 1);
         if (s.surrenders > 0) achievements.setProgress("first_surrender", 1);
         if (playerWon && engine.dealer().isBust()) achievements.increment("survived_bust");
-        achievements.setProgress("bankroll_5k",  Math.min(5000,  engine.bankroll()));
-        achievements.setProgress("bankroll_10k", Math.min(10000, engine.bankroll()));
-        // Heart of Stone: 5 winning rounds in a row (a push keeps the streak alive).
+        // High-water marks: never erase a bankroll peak the player already hit.
+        achievements.liftProgress("bankroll_5k",  Math.min(5000,  engine.bankroll()));
+        achievements.liftProgress("bankroll_10k", Math.min(10000, engine.bankroll()));
+        // Heart of Stone: 5 winning rounds in a row (a push keeps the streak).
+        // setProgress may lower — a loss must zero the saved progress, not just
+        // the session counter.
         if (playerWon)       winStreak++;
         else if (playerLost) winStreak = 0;
         achievements.setProgress("survived_bust_streak", winStreak);
@@ -659,7 +693,11 @@ public final class BlackJackProApp extends JFrame {
         else if (playerLost) lossStreak++;
 
         say(mostNotable(outcomes, playerWon, playerLost));
+        // Crash mid-session must not rewind bankroll/stats (GDX already persists).
+        save.save(engine);
+        achievements.save();
     }
+
 
     /**
      * Pick the single most remark-worthy thing about a finished round.
@@ -679,7 +717,11 @@ public final class BlackJackProApp extends JFrame {
             return TableEvent.FIVE_CARD_HAND;
         if (playerWon && engine.hands().stream().anyMatch(h -> h.doubled()))
             return TableEvent.DOUBLE_WIN;
-        if (engine.lastNet() >= Math.max(100, engine.bankroll() / 4))
+        // Threshold against the pre-settlement stack. Post-payout bankroll
+        // includes the win, so a $100 win from $400 (25%) missed BIG_WIN when
+        // the bar became max(100, 500/4)=125.
+        int stackBefore = engine.bankroll() - engine.lastNet();
+        if (engine.lastNet() >= Math.max(100, Math.max(0, stackBefore) / 4))
             return TableEvent.BIG_WIN;
         if (playerWon && engine.hands().stream()
                 .anyMatch(h -> h.value() == 21 && h.size() >= 3))
@@ -741,38 +783,12 @@ public final class BlackJackProApp extends JFrame {
      *
      * <p>Called after each action rather than only at round end, so the count
      * reflects the hand in progress — which is the only time a counter is any
-     * use. {@code observedCards} tracks how far through the table we have got so
-     * no card is counted twice; a reshuffle (the shoe's remaining count jumping
-     * back up) resets both the count and that cursor.
+     * use. Identity-tracked via {@link TableObservation} so a split that
+     * reorders the table cannot re-observe the dealer's up-card.
      */
     private void observeNewCards() {
-        // The reshuffle check has to run whether or not a counter is loaded --
-        // it's also what tells the table a fresh shoe went in.
-        if (engine.shoe().remaining() > lastShoeRemaining) {
-            if (counter != null) counter.resetCount();
-            observedCards = 0;
-            say(TableEvent.SHUFFLE);
-        }
-        lastShoeRemaining = engine.shoe().remaining();
-        if (counter == null) return;
-
-        int seen = 0;
-        for (var hh : engine.hands()) {
-            for (Card cc : hh.cards()) {
-                if (seen++ >= observedCards) counter.observe(cc);
-            }
-        }
-        // The hole card is face-down until the dealer plays; counting it early
-        // would leak information the player can't see at the table.
-        boolean holeHidden = engine.phase() == Phase.DEALING
-                || engine.phase() == Phase.INSURANCE
-                || engine.phase() == Phase.PLAYER;
-        List<Card> dealerCards = engine.dealer().cards();
-        int dealerVisible = holeHidden ? Math.min(1, dealerCards.size()) : dealerCards.size();
-        for (int i = 0; i < dealerVisible; i++) {
-            if (seen++ >= observedCards) counter.observe(dealerCards.get(i));
-        }
-        observedCards = seen;
+        observation.sync(engine);
+        if (observation.reshuffled()) say(TableEvent.SHUFFLE);
     }
 
     private String describe() {
@@ -833,17 +849,22 @@ public final class BlackJackProApp extends JFrame {
     }
 
     private void showRules() {
+        var r = engine.rules();
         String text =
                 "BlackJack Pro — house rules\n\n"
-              + "  * " + engine.rules().decks + "-deck shoe, "
-                       + (int)(engine.rules().penetration * 100) + "% penetration\n"
-              + "  * Blackjack pays " + engine.rules().blackjackPayoutNum + ":"
-                                      + engine.rules().blackjackPayoutDen + "\n"
-              + "  * Dealer " + (engine.rules().dealerHitsSoft17 ? "hits" : "stands") + " on soft 17\n"
+              + "  * " + r.decks + "-deck shoe, "
+                       + (int)(r.penetration * 100) + "% penetration\n"
+              + "  * Blackjack pays " + r.blackjackPayoutNum + ":"
+                                      + r.blackjackPayoutDen + "\n"
+              + "  * Dealer " + (r.dealerHitsSoft17 ? "hits" : "stands") + " on soft 17\n"
               + "  * Double on any first two cards\n"
-              + "  * Split up to " + (engine.rules().maxSplits + 1) + " hands\n"
-              + "  * Late surrender on first two cards\n"
-              + "  * Insurance offered on dealer Ace; pays 2:1\n"
+              + "  * Split up to " + (r.maxSplits + 1) + " hands\n"
+              + (r.lateSurrender
+                    ? "  * Late surrender on first two cards\n"
+                    : "  * Late surrender off\n")
+              + (r.offerInsurance
+                    ? "  * Insurance offered on dealer Ace; pays 2:1\n"
+                    : "  * Insurance not offered\n")
               + "  * Odd half-dollars round in your favour";
         JOptionPane.showMessageDialog(this, text, "Rules", JOptionPane.INFORMATION_MESSAGE);
     }
@@ -853,22 +874,29 @@ public final class BlackJackProApp extends JFrame {
                 "Reset bankroll to $1000 and clear stats?",
                 "New Session", JOptionPane.YES_NO_OPTION);
         if (yes != JOptionPane.YES_OPTION) return;
-        engine.clearBet();                 // return chips on the felt before the reset
-        engine.setBankroll(1000);
+        // abandonRound() clears any mid-hand cards and returns to BETTING.
+        // clearBet() alone is a no-op once cards are out, which left
+        // phase=PLAYER, Deal disabled, and a free $1000 next to a live hand.
+        engine.abandonRound();
         engine.stats().reset();
+        engine.setBankroll(1000);
         processedHands = 0;
         winStreak      = 0;
         lossStreak     = 0;
         lastResult     = "";
+        reloadDeclined = false;
         chatter.clear();
         sideBets.clear();
         sideMsg = "";
         engine.shoe().reshuffle();
-        if (counter != null) counter.resetCount();
-        observedCards     = 0;
-        lastShoeRemaining = engine.shoe().remaining();
+        observation.reset();
+        // Durable — a kill after New Session must not resurrect the old stack.
+        save.save(engine);
+        achievements.setProgress("survived_bust_streak", 0);
+        achievements.save();
         updateUi("New session. Place your bet.");
     }
+
 
     private void updateUi(String msg) {
         SwingUtilities.invokeLater(() -> {
@@ -881,10 +909,7 @@ public final class BlackJackProApp extends JFrame {
     private void refresh(String msg) {
         statusBar.setText(msg);
         bankLabel.setText("Bankroll: $" + engine.bankroll());
-        int displayed = engine.phase() == Phase.BETTING
-                ? engine.pendingBet()
-                : engine.hands().isEmpty() ? 0 : engine.hands().get(0).bet();
-        betLabel.setText("Bet: $" + displayed);
+        betLabel.setText("Bet: $" + displayedBet());
         shoeLabel.setText("Shoe: " + engine.shoe().remaining() + " cards");
 
         boolean betting = engine.phase() == Phase.BETTING;
@@ -896,12 +921,11 @@ public final class BlackJackProApp extends JFrame {
             else                                   sideLabel.setText("21+3 ready");
             if (bSide != null) bSide.setEnabled(betting);
         }
-        if (counter != null) {
-            if (showCount) {
-                int dr = Math.max(1, engine.shoe().remaining() / 52);
-                countLabel.setText(String.format("Count: %+d (TC %+.1f)", counter.runningCount(), counter.trueCount(dr)));
+        if (showCount) {
+                double dr = HiLoCounter.decksRemaining(engine.shoe().remaining());
+                HiLoCounter c = observation.counter();
+                countLabel.setText(String.format("Count: %+d (TC %+.1f)", c.runningCount(), c.trueCount(dr)));
             } else countLabel.setText("");
-        }
         for (JButton b : chipBtns) b.setEnabled(betting);
         bClear.setEnabled(betting && (engine.pendingBet() > 0 || sideBets.pending() > 0));
         bDeal.setEnabled(engine.canDeal());
@@ -921,9 +945,13 @@ public final class BlackJackProApp extends JFrame {
      * queued would run inside it and stack a second identical prompt.
      */
     private void maybeOfferReload() {
-        if (reloadPrompted) return;
+        if (reloadPrompted || reloadDeclined) return;
         if (engine.phase() != Phase.BETTING) return;
-        if (engine.bankroll() > 0 || engine.pendingBet() != 0 || sideBets.pending() != 0) return;
+        if (engine.bankroll() > 0 || engine.pendingBet() != 0 || sideBets.pending() != 0) {
+            // Chips came back (reload elsewhere / win) — allow a future prompt.
+            reloadDeclined = false;
+            return;
+        }
 
         reloadPrompted = true;
         try {
@@ -932,12 +960,17 @@ public final class BlackJackProApp extends JFrame {
                     JOptionPane.YES_NO_OPTION);
             if (yes == JOptionPane.YES_OPTION) {
                 engine.setBankroll(1000);
+                reloadDeclined = false;
                 refresh("Reloaded $1000. Place your bet.");   // HUD still read $0
+            } else {
+                // Remember No until the player has chips again.
+                reloadDeclined = true;
             }
         } finally {
             reloadPrompted = false;
         }
     }
+
 
     /**
      * Briefly tint the status bar to flag a rejected action.
@@ -956,6 +989,19 @@ public final class BlackJackProApp extends JFrame {
             flashTimer.setRepeats(false);
         }
         flashTimer.restart();
+    }
+
+    /**
+     * Chips the player currently has at risk. During betting that is the
+     * pending stake; once cards are out it is the sum across every split hand
+     * (the old HUD only showed hand 0, so a double-split $25 table still read
+     * "Bet: $25" while $100 sat on the felt).
+     */
+    private int displayedBet() {
+        if (engine.phase() == Phase.BETTING) return engine.pendingBet();
+        int total = 0;
+        for (var h : engine.hands()) total += h.bet();
+        return total;
     }
 
     /* ----------------------------------------------------------------------- */

@@ -57,21 +57,48 @@ public final class AchievementService {
     public void record(String id, int delta) {
         Achievement a = all.get(id);
         if (a == null) return;
-        if (a.record(delta)) {
+        boolean unlockedNow = a.record(delta);
+        // Always flush — mid-progress for ten_wins used to vanish on crash
+        // because save only ran on the unlock transition.
+        save();
+        if (unlockedNow) {
             for (Consumer<Achievement> l : listeners) l.accept(a);
-            save();
         }
     }
+
 
     /** Convenience: increment by 1. */
     public void increment(String id)               { record(id, 1); }
 
-    /** Set absolute progress (used by bankroll milestones). */
+    /**
+     * Set absolute progress.
+     *
+     * <p>May lower the value — required for win-streak achievements that reset
+     * on a loss. A previous implementation only applied positive deltas, so
+     * Heart of Stone climbed to 3, ignored every subsequent loss, and then
+     * needed an unbroken session longer than the saved progress to move again.
+     *
+     * <p>For "reach N" milestones (bankroll) prefer {@link #liftProgress} so a
+     * temporary dip in chips cannot erase a high-water mark.
+     */
     public void setProgress(String id, int value) {
         Achievement a = all.get(id);
         if (a == null || a.unlocked()) return;
-        int delta = value - a.progress();
-        if (delta > 0) record(id, delta);
+        if (a.setProgress(value)) {
+            for (Consumer<Achievement> l : listeners) l.accept(a);
+        }
+        save();
+    }
+
+    /**
+     * Raise progress to {@code value} if higher than the current figure.
+     * Bankroll milestones use this so a stack that once hit $5k stays credited
+     * after a later losing streak.
+     */
+    public void liftProgress(String id, int value) {
+        Achievement a = all.get(id);
+        if (a == null || a.unlocked()) return;
+        if (value > a.progress()) setProgress(id, value);
     }
 
     private void load() {

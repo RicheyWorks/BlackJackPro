@@ -39,6 +39,15 @@ class HiLoCounterTest {
         assertEquals(6.0, ai.trueCount(0), 1e-9);               // guard: decks<=0 -> running
     }
 
+    @Test void trueCountUsesFractionalDecksFromCardCount() {
+        HiLoCounter ai = new HiLoCounter();
+        for (int i = 0; i < 20; i++) ai.observe(c(Rank.FIVE));  // +20
+        // 80 cards left is ~1.54 decks. Integer division used to report TC=20.
+        double decks = HiLoCounter.decksRemaining(80);
+        assertEquals(80 / 52.0, decks, 1e-9);
+        assertEquals(20.0 / (80 / 52.0), ai.trueCount(decks), 1e-9);
+    }
+
     @Test void resetClearsCount() {
         HiLoCounter ai = new HiLoCounter();
         ai.observe(c(Rank.FIVE));

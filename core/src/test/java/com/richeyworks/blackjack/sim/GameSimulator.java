@@ -6,6 +6,7 @@ import com.richeyworks.blackjack.persist.SaveManager;
 import com.richeyworks.blackjack.sidebet.SideBetManager;
 import com.richeyworks.blackjack.sidebet.TwentyOnePlusThree;
 import com.richeyworks.blackjack.strategy.HiLoCounter;
+import com.richeyworks.blackjack.strategy.TableObservation;
 import com.richeyworks.blackjack.table.*;
 
 import java.io.IOException;
@@ -73,7 +74,7 @@ public final class GameSimulator {
     private final Random rng;
     private final Engine engine;
     private final SideBetManager sideBets = new SideBetManager(new TwentyOnePlusThree());
-    private final HiLoCounter counter = new HiLoCounter();
+    private final TableObservation observation = new TableObservation(new HiLoCounter());
     private final TableChatter chatter;
     private final Coverage cov = new Coverage();
 
@@ -82,7 +83,7 @@ public final class GameSimulator {
     /** Every fifth seed plays basic strategy rather than random moves, so the
      *  realistic lines (correct splits, deep DAS hands) get walked too. */
     private final boolean strategist;
-    private int round, lastShoe, observed, winStreak, lossStreak, processed;
+    private int round, winStreak, lossStreak, processed;
     private long clock;
 
     public GameSimulator(long seed) {
@@ -108,7 +109,6 @@ public final class GameSimulator {
         List<Persona> cast = casts.get((int) Math.floorMod(seed, casts.size()));
         this.chatter = new TableChatter(cast, new Random(seed ^ 0xBEEF));
         this.cov.casts.add(cast.get(0).id());
-        this.lastShoe = engine.shoe().remaining();
     }
 
     public Coverage coverage() { return cov; }
@@ -154,7 +154,6 @@ public final class GameSimulator {
         engine.addBet(bet);
         checkAll("bet placed");
 
-        observed = 0;
         engine.deal();
         resolveSideBet();
         checkAll("dealt");
@@ -516,23 +515,15 @@ public final class GameSimulator {
     /* ------------------------------------------------------------------ */
 
     private void observeCards() {
-        if (engine.shoe().remaining() > lastShoe) {
-            counter.resetCount(); observed = 0; cov.reshuffles++;
-            seenSinceShuffle.clear(); cardsSinceShuffle = 0;
+        observation.sync(engine);
+        if (observation.reshuffled()) {
+            cov.reshuffles++;
+            seenSinceShuffle.clear();
+            cardsSinceShuffle = 0;
             say(TableEvent.SHUFFLE);
         }
-        lastShoe = engine.shoe().remaining();
-        int seen = 0;
-        for (Hand h : engine.hands())
-            for (Card c : h.cards()) if (seen++ >= observed) counter.observe(c);
-        boolean hidden = engine.phase() == Phase.DEALING
-                || engine.phase() == Phase.INSURANCE
-                || engine.phase() == Phase.PLAYER;
-        List<Card> d = engine.dealer().cards();
-        int visible = hidden ? Math.min(1, d.size()) : d.size();
-        for (int i = 0; i < visible; i++) if (seen++ >= observed) counter.observe(d.get(i));
-        observed = seen;
-        counter.trueCount(Math.max(1, engine.shoe().remaining() / 52));   // must not divide by zero
+        // Must not divide by zero — trueCount guards, but call it the way the UI does.
+        observation.counter().trueCount(HiLoCounter.decksRemaining(engine.shoe().remaining()));
     }
 
     private void fireChatter() {
@@ -549,7 +540,8 @@ public final class GameSimulator {
         if (os.contains(Outcome.BLACKJACK)) ev = TableEvent.PLAYER_BLACKJACK;
         else if (won && engine.hands().stream().anyMatch(h -> h.size() >= 5)) ev = TableEvent.FIVE_CARD_HAND;
         else if (won && engine.hands().stream().anyMatch(Hand::doubled))      ev = TableEvent.DOUBLE_WIN;
-        else if (engine.lastNet() >= Math.max(100, engine.bankroll() / 4))    ev = TableEvent.BIG_WIN;
+        else if (engine.lastNet() >= Math.max(100, Math.max(0, engine.bankroll() - engine.lastNet()) / 4))
+            ev = TableEvent.BIG_WIN;
         else if (won && engine.hands().stream().anyMatch(h -> h.value() == 21 && h.size() >= 3))
             ev = TableEvent.TWENTY_ONE;
         else if (engine.dealer().isBust() && won)  ev = TableEvent.DEALER_BUST;

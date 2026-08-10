@@ -62,17 +62,33 @@ public final class DefaultComplianceGate implements ComplianceGate {
         if (!p.ageVerified()) {
             return Decision.deny(DenialReason.AGE_NOT_VERIFIED);
         }
-        if (p.selfExcluded()) {
+        // Self-exclusion blocks wagering and deposits, but not withdrawals — locking
+        // a player's remaining balance behind a ban is a compliance failure mode.
+        if (p.selfExcluded() && action.type() != Action.Type.WITHDRAWAL) {
             return Decision.deny(DenialReason.SELF_EXCLUDED);
+        }
+        // Fail closed on unknown money: null asset or non-positive amount.
+        if (action.asset() == null) {
+            return Decision.deny(DenialReason.LIMIT_EXCEEDED);
+        }
+        if (action.amountMinor() <= 0
+                && (action.type() == Action.Type.WAGER
+                || action.type() == Action.Type.DEPOSIT
+                || action.type() == Action.Type.WITHDRAWAL)) {
+            return Decision.deny(DenialReason.LIMIT_EXCEEDED);
         }
         String state = p.locatedState();
         if (state == null || state.isBlank()) {
+            // Withdrawals of residual funds: allow when self-excluded only if we
+            // still know a licensed home state. Blank location remains uncertain.
             return Decision.deny(DenialReason.LOCATION_UNCERTAIN);
         }
+        // Withdrawals still require a licensed state under this snapshot gate;
+        // a relocated player needs an ops cash-out path outside pure wager rules.
         if (!policy.isLicensed(state)) {
             return Decision.deny(DenialReason.STATE_NOT_LICENSED);
         }
-        if (action.asset() != null && action.asset().isCrypto() && !policy.cryptoAllowed(state)) {
+        if (action.asset().isCrypto() && !policy.cryptoAllowed(state)) {
             return Decision.deny(DenialReason.CRYPTO_NOT_PERMITTED_IN_STATE);
         }
         if (exceedsDepositCap(action, p)) {
@@ -80,6 +96,7 @@ public final class DefaultComplianceGate implements ComplianceGate {
         }
         return Decision.allow();
     }
+
 
     /** Representative immediate limit: fiat per-deposit cap in cents. 0 = no cap set. */
     private boolean exceedsDepositCap(Action action, PlayerComplianceState p) {

@@ -38,4 +38,21 @@ class AchievementServiceTest {
         assertTrue(svc.get("bankroll_5k").unlocked());
         assertEquals(5000, svc.get("bankroll_5k").progress());
     }
+
+    @Test void setProgressCanLowerAStreakOnLoss() {
+        AchievementService svc = new AchievementService(null);
+        svc.setProgress("survived_bust_streak", 3);
+        assertEquals(3, svc.get("survived_bust_streak").progress());
+        // A loss used to call setProgress(0) and leave the value at 3 because
+        // only positive deltas applied — Heart of Stone could never reset.
+        svc.setProgress("survived_bust_streak", 0);
+        assertEquals(0, svc.get("survived_bust_streak").progress());
+    }
+
+    @Test void liftProgressNeverLowers() {
+        AchievementService svc = new AchievementService(null);
+        svc.liftProgress("bankroll_5k", 4000);
+        svc.liftProgress("bankroll_5k", 1500);   // stack dipped
+        assertEquals(4000, svc.get("bankroll_5k").progress());
+    }
 }

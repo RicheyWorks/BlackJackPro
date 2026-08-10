@@ -68,6 +68,11 @@ public final class SaveManager {
                     default              -> { /* ignore unknown keys for forward compat */ }
                 }
             }
+            // peakBankroll is a separate line and may arrive after bankroll. A
+            // hand-edited or partially-written save can claim peak < bankroll;
+            // setBankroll lifts the peak, but a later peak= line can put it
+            // back below the bankroll. Re-lift once everything is read.
+            e.stats().peakBankroll = Math.max(e.stats().peakBankroll, e.bankroll());
         } catch (IOException ignored) { }
     }
 }

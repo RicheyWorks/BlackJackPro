@@ -35,13 +35,26 @@ public final class HiLoCounter {
               || r == Rank.ACE)                     runningCount--;
     }
 
-    public double trueCount(int decksRemaining) {
-        return decksRemaining <= 0 ? runningCount : (double) runningCount / decksRemaining;
+    /**
+     * True count = running / decks remaining.
+     *
+     * <p>Accepts a fractional deck count. Callers used to pass
+     * {@code remaining / 52} as an {@code int}, which maps 53–103 cards all to
+     * "1 deck" and inflates the true count by up to ~2× mid-shoe.
+     */
+    public double trueCount(double decksRemaining) {
+        if (decksRemaining <= 0) return runningCount;
+        return runningCount / decksRemaining;
+    }
+
+    /** Decks still in the shoe, never below a single card's fraction. */
+    public static double decksRemaining(int cardsRemaining) {
+        return Math.max(cardsRemaining / 52.0, 1.0 / 52.0);
     }
 
     public boolean shouldHit(Engine engine, Hand hand) {
         // standard threshold 17, biased by count
-        double tc = trueCount(Math.max(1, engine.shoe().remaining() / 52));
+        double tc = trueCount(decksRemaining(engine.shoe().remaining()));
         int threshold;
         if (tc >= 3)   threshold = 18;
         else if (tc <= -2) threshold = 14;
@@ -51,7 +64,7 @@ public final class HiLoCounter {
 
     public int chooseBet(Engine engine, int bankroll) {
         if (bankroll <= 0) return 0;
-        double tc = trueCount(Math.max(1, engine.shoe().remaining() / 52));
+        double tc = trueCount(decksRemaining(engine.shoe().remaining()));
         int units;
         if      (tc >= 4) units = 8;
         else if (tc >= 3) units = 4;

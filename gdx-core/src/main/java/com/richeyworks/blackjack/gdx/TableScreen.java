@@ -25,6 +25,7 @@ import com.richeyworks.blackjack.engine.SessionStats;
 import com.richeyworks.blackjack.sidebet.SideBetManager;
 import com.richeyworks.blackjack.sidebet.TwentyOnePlusThree;
 import com.richeyworks.blackjack.strategy.HiLoCounter;
+import com.richeyworks.blackjack.strategy.TableObservation;
 import com.richeyworks.blackjack.table.Casts;
 import com.richeyworks.blackjack.table.Persona;
 import com.richeyworks.blackjack.table.Personas;
@@ -70,16 +71,13 @@ public final class TableScreen extends InputAdapter implements Screen {
             new TableChatter(Personas.defaults(), new java.util.Random());
     /** Consecutive losing rounds, the mirror of winStreak. */
     private int lossStreak;
-    private int lastShoeSeen;
     private boolean greeted;
 
     /** 21+3, now that the side-bet logic lives in core rather than swing/. */
     private final SideBetManager sideBets = new SideBetManager(new TwentyOnePlusThree());
     private String sideMsg = "";
-    /** Hi-Lo running count, same class the desktop HUD uses. */
-    private final HiLoCounter counter = new HiLoCounter();
-    /** Cards already fed to the counter this round, so none is counted twice. */
-    private int observedCards;
+    /** Hi-Lo running count — identity-tracked so splits cannot double-count. */
+    private final TableObservation observation = new TableObservation(new HiLoCounter());
 
     /** Live lookup, not a field: switching theme must apply on the next frame. */
     private GdxPalette pal() { return game.palette(); }
@@ -96,6 +94,9 @@ public final class TableScreen extends InputAdapter implements Screen {
     private String  statusText = "Place your bet to begin.";
     private long    flashUntil;
     private String  flashText;
+    /** True while switching to {@link MenuScreen} so hide() does not clearBet. */
+    private boolean navigatingToMenu;
+
 
     public TableScreen(BlackJackGame game) {
         this.game    = game;
@@ -106,6 +107,10 @@ public final class TableScreen extends InputAdapter implements Screen {
         // progress on each launch.
         this.engine  = session.engine();
         this.processedHands = engine.stats().hands;
+        // Resume Heart of Stone from the persisted achievement, not from zero —
+        // otherwise a 3/5 streak needed four fresh wins to tick once.
+        var streak = session.achievements().get("survived_bust_streak");
+        if (streak != null && !streak.unlocked()) winStreak = streak.progress();
         seatCast(session.settings().themeId);
         bigFont.getData().setScale(2f);
         buildButtons();
@@ -137,9 +142,10 @@ public final class TableScreen extends InputAdapter implements Screen {
             if (engine.phase() != Phase.BETTING) return;
             engine.clearBet();
             int refund = sideBets.clear();
-            if (refund > 0) engine.setBankroll(engine.bankroll() + refund);
+            if (refund > 0) engine.setBankroll(saturatedAdd(engine.bankroll(), refund));
             sideMsg = "";
             statusText = "Bet cleared.";
+
         }));
         x += 100;
         buttons.add(action(x, y, 90, 50, "21+3", this::placeSideBet));
@@ -149,7 +155,6 @@ public final class TableScreen extends InputAdapter implements Screen {
         float ay = 100;
         buttons.add(action(30,        ay, 90, 50, "Deal", () -> safe(() -> {
             sideMsg = "";
-            observedCards = 0;      // the deal replaces every hand
             engine.deal();
             resolveSideBet();
         }, "Place a bet first.")));
@@ -166,16 +171,29 @@ public final class TableScreen extends InputAdapter implements Screen {
     /**
      * Open settings/stats. The menu keeps a reference back to this screen, so a
      * hand in progress survives the round trip.
+     *
+     * <p>libGDX calls {@link #hide()} when the screen changes. hide used to
+     * always {@link #persistSafely()}, which {@code clearBet()}s staged chips
+     * onto the bankroll — so opening Menu wiped the felt. Skip persist while
+     * navigating to the in-process menu; pause/dispose still save.
      */
     private void openMenu() {
+        navigatingToMenu = true;
         if (menu == null) menu = new MenuScreen(game, this);
         game.setScreen(menu);
     }
+
 
     /** Called by {@link MenuScreen} after a reset so stale counters don't leak. */
     void onSessionReset() {
         processedHands = engine.stats().hands;
         winStreak      = 0;
+        lossStreak     = 0;
+        // Pending 21+3 must not survive a bankroll reset — otherwise the next
+        // deal settles a free side bet the player never re-paid after setBankroll.
+        sideBets.clear();
+        sideMsg = "";
+        observation.reset();
         statusText     = "New session. Place your bet.";
     }
 
@@ -210,9 +228,13 @@ public final class TableScreen extends InputAdapter implements Screen {
         if (!sideBets.available() || sideBets.pending() == 0) return;
         int stake  = sideBets.pending();
         int payout = sideBets.resolve(engine.hands().get(0).cards(), engine.dealer().first());
-        engine.stats().totalWagered  += stake;
-        engine.stats().totalReturned += payout;
-        engine.setBankroll(engine.bankroll() + payout);
+        // Saturating add — large stakes + prior session totals must not wrap.
+        long tw = (long) engine.stats().totalWagered + stake;
+        engine.stats().totalWagered = tw >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tw;
+        long tr = (long) engine.stats().totalReturned + Math.max(0, payout);
+        engine.stats().totalReturned = tr >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tr;
+        engine.setBankroll(saturatedAdd(engine.bankroll(), Math.max(0, payout)));
+
         if (payout > 0) {
             game.sfx().winSting();
             sideMsg = "21+3 " + sideBets.lastOutcome() + ": +$" + (payout - stake);
@@ -221,28 +243,25 @@ public final class TableScreen extends InputAdapter implements Screen {
         }
     }
 
+    /** bankroll + delta without int wrap (setBankroll clamps negatives to 0). */
+    private static int saturatedAdd(int bankroll, int delta) {
+        long s = (long) bankroll + delta;
+        if (s >= Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        if (s <= 0) return 0;
+        return (int) s;
+    }
+
+
+
     /**
      * Feed the counter every card that has appeared since the last check.
      *
      * <p>The hole card is skipped while it is face down: counting it early
      * would show the player information they cannot see at the table.
+     * Identity-tracked so a split cannot re-observe the dealer's up-card.
      */
     private void observeNewCards() {
-        if (engine.shoe().remaining() > lastShoeSeen) {
-            counter.resetCount();
-            observedCards = 0;
-        }
-        int seen = 0;
-        for (Hand h : engine.hands()) {
-            for (Card c : h.cards()) if (seen++ >= observedCards) counter.observe(c);
-        }
-        boolean holeHidden = engine.phase() == Phase.DEALING
-                || engine.phase() == Phase.INSURANCE
-                || engine.phase() == Phase.PLAYER;
-        List<Card> dealer = engine.dealer().cards();
-        int visible = holeHidden ? Math.min(1, dealer.size()) : dealer.size();
-        for (int i = 0; i < visible; i++) if (seen++ >= observedCards) counter.observe(dealer.get(i));
-        observedCards = seen;
+        observation.sync(engine);
     }
 
     private Button action(float x, float y, float w, float h, String label, Runnable run) {
@@ -269,16 +288,28 @@ public final class TableScreen extends InputAdapter implements Screen {
      */
     private void postAction() {
         observeNewCards();
-        if (engine.shoe().remaining() > lastShoeSeen) say(TableEvent.SHUFFLE);
-        lastShoeSeen = engine.shoe().remaining();
-        if (engine.phase() == Phase.INSURANCE) say(TableEvent.INSURANCE_OFFERED);
-        else if (engine.phase() == Phase.PLAYER && dealerShowsWeakCard())
-            say(TableEvent.DEALER_WEAK_CARD);
+        if (observation.reshuffled()) say(TableEvent.SHUFFLE);
+        if (engine.phase() == Phase.INSURANCE) {
+            say(TableEvent.INSURANCE_OFFERED);
+            statusText = "Insurance? Premium $" + engine.rules().insurancePremium(
+                    engine.hands().isEmpty() ? 0 : engine.hands().get(0).bet());
+        } else if (engine.phase() == Phase.PLAYER) {
+            if (dealerShowsWeakCard()) say(TableEvent.DEALER_WEAK_CARD);
+            // Live status so the HUD is not stuck on the previous result / welcome.
+            Hand h = engine.active();
+            statusText = "Hand " + (engine.activeIndex() + 1) + "/" + engine.hands().size()
+                    + "  value " + h.value()
+                    + (h.isSoft() ? " soft" : "")
+                    + "  bet $" + h.bet();
+        } else if (engine.phase() == Phase.DEALER) {
+            statusText = "Dealer playing…";
+        }
         if (engine.phase() == Phase.BETTING && engine.stats().hands > processedHands) {
             processedHands = engine.stats().hands;
             onRoundComplete();
         }
     }
+
 
     /** Offer one event to the table; the chatter decides whether anyone speaks. */
     private void say(TableEvent event) {
@@ -310,7 +341,12 @@ public final class TableScreen extends InputAdapter implements Screen {
             return TableEvent.FIVE_CARD_HAND;
         if (won && engine.hands().stream().anyMatch(Hand::doubled))
             return TableEvent.DOUBLE_WIN;
-        if (engine.lastNet() >= Math.max(100, engine.bankroll() / 4))
+        // Compare against the stack *before* this round paid out. Using the
+        // post-settlement bankroll raises the bar by the win itself — a $100
+        // win from $400 (exactly 25%) missed BIG_WIN because the threshold
+        // became max(100, 500/4)=125.
+        int stackBefore = engine.bankroll() - engine.lastNet();
+        if (engine.lastNet() >= Math.max(100, Math.max(0, stackBefore) / 4))
             return TableEvent.BIG_WIN;
         if (won && engine.hands().stream().anyMatch(h -> h.value() == 21 && h.size() >= 3))
             return TableEvent.TWENTY_ONE;
@@ -354,13 +390,14 @@ public final class TableScreen extends InputAdapter implements Screen {
         // The engine assigns each hand an outcome as it pays it out, so what the
         // player reads always matches what they were paid. Re-deriving it here
         // from hand values would be a second copy of the settlement rules.
-        boolean won   = false, pushed = false, natural = false;
+        boolean won   = false, pushed = false, natural = false, lost = false;
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < outcomes.size(); i++) {
             Outcome o = outcomes.get(i);
             won     |= o.isWin();
             pushed  |= o == Outcome.PUSH;
             natural |= o == Outcome.BLACKJACK;
+            lost    |= o == Outcome.LOSS || o == Outcome.BUST || o == Outcome.SURRENDER;
             if (outcomes.size() > 1) sb.append("Hand ").append(i + 1).append(": ");
             sb.append(o.label()).append("   ");
         }
@@ -373,12 +410,12 @@ public final class TableScreen extends InputAdapter implements Screen {
         // Same outcome cues as the desktop, from the same synthesised effects.
         if (natural)      game.sfx().blackjackFanfare();
         else if (won)     game.sfx().winSting();
-        else if (pushed)  game.sfx().pushBeep();
+        else if (pushed && !lost)  game.sfx().pushBeep();
         else              game.sfx().loseSting();
 
         if (won)          lossStreak = 0;
-        else if (!pushed) lossStreak++;
-        say(mostNotable(outcomes, won, !won && !pushed));
+        else if (lost)    lossStreak++;
+        say(mostNotable(outcomes, won, lost && !won));
 
         AchievementService a = session.achievements();
         SessionStats       s = engine.stats();
@@ -389,12 +426,13 @@ public final class TableScreen extends InputAdapter implements Screen {
         if (s.doubles    > 0) a.setProgress("first_double", 1);
         if (s.surrenders > 0) a.setProgress("first_surrender", 1);
         if (won && engine.dealer().isBust()) a.increment("survived_bust");
-        a.setProgress("bankroll_5k",  Math.min(5000,  engine.bankroll()));
-        a.setProgress("bankroll_10k", Math.min(10000, engine.bankroll()));
-        // A push keeps a streak alive; only a loss breaks it.
+        a.liftProgress("bankroll_5k",  Math.min(5000,  engine.bankroll()));
+        a.liftProgress("bankroll_10k", Math.min(10000, engine.bankroll()));
+        // Pure push keeps the streak; any loss breaks it even if another hand pushed.
         if (won)               winStreak++;
-        else if (!pushed)      winStreak = 0;
+        else if (lost)         winStreak = 0;
         a.setProgress("survived_bust_streak", winStreak);
+
 
         // Money changed hands and achievements may have unlocked, so make it
         // durable now rather than trusting the app to get a pause() later.
@@ -764,9 +802,10 @@ public final class TableScreen extends InputAdapter implements Screen {
         font.draw(batch, "Bankroll: $" + engine.bankroll(),    20,  WORLD_H - 12);
         font.draw(batch, "Bet: $"      + currentBet(),        220,  WORLD_H - 12);
         font.draw(batch, "Shoe: "      + engine.shoe().remaining(), 380, WORLD_H - 12);
-        int decks = Math.max(1, engine.shoe().remaining() / 52);
+        HiLoCounter c = observation.counter();
+        double decks = HiLoCounter.decksRemaining(engine.shoe().remaining());
         font.draw(batch, String.format("Count: %+d (TC %+.1f)",
-                counter.runningCount(), counter.trueCount(decks)), 530, WORLD_H - 12);
+                c.runningCount(), c.trueCount(decks)), 530, WORLD_H - 12);
         String side = engine.phase() == Phase.BETTING && sideBets.pending() > 0
                 ? "21+3 bet: $" + sideBets.pending()
                 : sideMsg.isEmpty() ? "21+3 ready" : sideMsg;
@@ -784,7 +823,9 @@ public final class TableScreen extends InputAdapter implements Screen {
 
     private int currentBet() {
         if (engine.phase() == Phase.BETTING) return engine.pendingBet();
-        return engine.hands().isEmpty() ? 0 : engine.hands().get(0).bet();
+        int total = 0;
+        for (Hand h : engine.hands()) total += h.bet();
+        return total;
     }
 
     /* ---------- input ---------- */
@@ -821,20 +862,50 @@ public final class TableScreen extends InputAdapter implements Screen {
      * {@link BlackJackGame#pause()} forwards here, so the save happens whether
      * the platform notifies the game or the screen.
      */
-    @Override public void pause()    { session.persist(); }
+    @Override public void pause()    { persistSafely(); }
 
-    /** Leaving the screen for another is also a good moment to be durable. */
-    @Override public void hide()     { session.persist(); }
+    /**
+     * Leaving the screen for another is also a good moment to be durable —
+     * except when that other screen is the in-process menu (see
+     * {@link #openMenu()}).
+     */
+    @Override public void hide() {
+        if (navigatingToMenu) {
+            navigatingToMenu = false;
+            return;
+        }
+        persistSafely();
+    }
+
 
     @Override public void dispose()  {
-        session.persist();
+        persistSafely();
         if (menu != null) { menu.dispose(); menu = null; }
         shapes.dispose(); batch.dispose(); font.dispose(); bigFont.dispose();
     }
 
+    /**
+     * Refund chips that live outside the engine, then persist.
+     *
+     * <p>Main-bet chips are returned by {@link GameSession#persist()} via
+     * {@code clearBet()}. The 21+3 stake is held in {@link #sideBets} and was
+     * already deducted from the bankroll at placement — without refunding it
+     * here, backgrounding the app mid-side-bet wrote the reduced bankroll and
+     * destroyed the stake (a new session starts with {@code pending == 0}).
+     */
+    private void persistSafely() {
+        if (sideBets.pending() > 0) {
+            int refund = sideBets.clear();
+            if (refund > 0) engine.setBankroll(saturatedAdd(engine.bankroll(), refund));
+            sideMsg = "";
+        }
+        session.persist();
+
+    }
+
     /* ---------- button helper ---------- */
 
-    private static final class Button {
+    private final class Button {
         final Rectangle bounds;
         final String    label;
         final Runnable  action;
@@ -854,8 +925,14 @@ public final class TableScreen extends InputAdapter implements Screen {
                 case "Double":    return e.canDouble();
                 case "Split":     return e.canSplit();
                 case "Surrender": return e.canSurrender();
-                case "Insure":
+                // Insure needs chips for the premium; Decline is always legal
+                // during the insurance prompt (including when broke).
+                case "Insure":    return e.canInsure();
                 case "Decline":   return e.phase() == Phase.INSURANCE;
+                case "Clear":     return e.phase() == Phase.BETTING
+                        && (e.pendingBet() > 0 || sideBets.pending() > 0);
+                case "21+3":      return e.phase() == Phase.BETTING;
+                case "Menu":      return true;
                 default:          return true;
             }
         }

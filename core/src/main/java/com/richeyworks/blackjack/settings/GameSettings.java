@@ -44,7 +44,9 @@ public final class GameSettings {
             sfxVolume        = clamp01(flt(p, "sfxVolume",   sfxVolume));
             musicVolume      = clamp01(flt(p, "musicVolume", musicVolume));
             themeId          = p.getProperty("themeId",       themeId);
+            if (themeId == null || themeId.isBlank()) themeId = "classic";
             aiPersonality    = p.getProperty("aiPersonality", aiPersonality);
+            if (aiPersonality == null || aiPersonality.isBlank()) aiPersonality = "cautious";
         } catch (IOException ignored) { }
     }
 

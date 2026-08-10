@@ -198,4 +198,12 @@ class MoneyRoundingTest {
             assertEquals(e.bankroll() - before, e.lastNet(), "round " + round);
         }
     }
+
+    @Test void payUpSaturatesInsteadOfWrappingNegative() {
+        BlackjackRules r = new BlackjackRules();
+        // 1.5e9 * 3/2 = 2.25e9 — used to cast to a negative int
+        int winnings = r.blackjackPayout(1_500_000_000);
+        assertTrue(winnings > 0, "winnings must not wrap negative, was " + winnings);
+        assertEquals(Integer.MAX_VALUE, winnings);
+    }
 }

@@ -52,6 +52,17 @@ class DefaultComplianceGateTest {
     }
 
     @Test
+    void selfExcludedCanStillWithdraw() {
+        var p = new PlayerComplianceState("p", KycStatus.VERIFIED, "NJ", true, true, new RgLimits(0, 0, 0));
+        assertEquals(DenialReason.SELF_EXCLUDED,
+                gate.authorize(new Action(p, Action.Type.WAGER, Asset.USD, 100)).reason());
+        assertEquals(DenialReason.SELF_EXCLUDED,
+                gate.authorize(new Action(p, Action.Type.DEPOSIT, Asset.USD, 100)).reason());
+        assertTrue(gate.authorize(new Action(p, Action.Type.WITHDRAWAL, Asset.USD, 100)).allowed(),
+                "self-exclusion must not lock residual funds");
+    }
+
+    @Test
     void deniesUncertainLocation() {
         assertEquals(DenialReason.LOCATION_UNCERTAIN, wager(verifiedIn(null), Asset.USD, 500).reason());
     }

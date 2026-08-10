@@ -60,6 +60,9 @@ public final class MenuScreen extends InputAdapter implements Screen {
     /** Reset is destructive and there is no undo, so it takes two taps. */
     private boolean confirmingReset;
     private String  notice = "";
+    /** Skip clearBet when hide() is just the trip back to the table. */
+    private boolean returningToTable;
+
 
     /**
      * @param table the live table screen, kept so returning preserves the hand
@@ -234,7 +237,7 @@ public final class MenuScreen extends InputAdapter implements Screen {
             boolean on = game.sfx().muted();          // toggling, so invert
             game.sfx().setMuted(!on);
             session.settings().sfxEnabled = on;
-            session.persist();
+            session.persistSettings();
             if (!game.sfx().muted()) game.sfx().chipClick();   // audible confirmation
             notice = "Sound effects " + (game.sfx().muted() ? "off" : "on") + " - saved";
             confirmingReset = false;
@@ -244,15 +247,17 @@ public final class MenuScreen extends InputAdapter implements Screen {
             // Steps in quarters and wraps. A slider needs a drag gesture and
             // precise hit-testing; four taps covers the useful range on a phone.
             float next = game.sfx().volume() + 0.25f;
-            if (next > 1.01f) next = 0.25f;
+            if (next > 1.01f) next = 0f; // include silence in the cycle
             game.sfx().setVolume(next);
+
             session.settings().sfxVolume = next;
-            session.persist();
+            session.persistSettings();
             if (!game.sfx().muted()) game.sfx().chipClick();   // hear the new level
             notice = "Volume " + Math.round(next * 100) + "% - saved";
             confirmingReset = false;
             return;
         }
+
         if (r.action == Action.RESET) {
             if (!confirmingReset) {
                 confirmingReset = true;
@@ -269,7 +274,9 @@ public final class MenuScreen extends InputAdapter implements Screen {
     }
 
     private void back() {
-        session.persist();
+        // Do NOT session.persist() here — that clearBet()s chips staged on the
+        // felt before the player opened the menu. Table.pause/dispose still save.
+        returningToTable = true;
         game.setScreen(table);
     }
 
@@ -290,9 +297,16 @@ public final class MenuScreen extends InputAdapter implements Screen {
     }
 
     @Override public void resize(int w, int h) { viewport.update(w, h, true); }
-    @Override public void pause()    { session.persist(); }
+    @Override public void pause()    { session.persist(true); }
     @Override public void resume()   { }
-    @Override public void hide()     { session.persist(); }
+    @Override public void hide() {
+        if (returningToTable) {
+            returningToTable = false;
+            return;
+        }
+        session.persist(true);
+    }
+
 
     @Override public void dispose()  {
         shapes.dispose(); batch.dispose(); font.dispose(); bigFont.dispose();

@@ -12,6 +12,9 @@ import java.util.List;
  */
 public final class SideBetManager {
 
+    /** Hard cap so a runaway chip click cannot overflow pending. */
+    public static final int MAX_PENDING = 1_000_000;
+
     private final SideBet bet;          // null when no side-bet plugin is loaded
     private int    pending;
     private int    lastPayout;
@@ -32,6 +35,7 @@ public final class SideBetManager {
      */
     public int add(int amount, int bankroll) {
         if (bet == null || amount <= 0 || amount > bankroll) return 0;
+        if (pending > MAX_PENDING - amount) return 0; // refuse overflow / runaway stake
         pending += amount;
         return amount;
     }
@@ -45,7 +49,7 @@ public final class SideBetManager {
 
     /**
      * Resolve the pending bet against the opening cards and reset it.
-     * @return total returned to the player (0 = lost; &gt; stake = win incl. stake);
+     * @return total returned to the player (0 = lost; > stake = win incl. stake);
      *         the caller adds this to the bankroll. Returns 0 if nothing was staked.
      */
     public int resolve(List<Card> playerCards, Card dealerUp) {
@@ -53,6 +57,7 @@ public final class SideBetManager {
         int stake = pending;
         pending = 0;
         int returned = bet.settle(playerCards, dealerUp, stake);
+        if (returned < 0) returned = 0; // never credit a wrapped negative payout
         lastPayout  = returned;
         lastOutcome = bet.lastOutcome();
         return returned;

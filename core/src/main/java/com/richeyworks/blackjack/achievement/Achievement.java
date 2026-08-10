@@ -29,11 +29,33 @@ public final class Achievement {
 
     /** Returns true iff the achievement just transitioned from locked to unlocked. */
     boolean record(int delta) {
-        if (unlocked) return false;
-        progress += delta;
+        if (unlocked || delta <= 0) return false;
+        // Saturate rather than wrap: a huge delta used to make progress negative.
+        long next = (long) progress + delta;
+        progress = next >= goal ? goal : (int) Math.min(Integer.MAX_VALUE, next);
         if (progress >= goal) {
             progress  = goal;
             unlocked  = true;
+            return true;
+        }
+        return false;
+    }
+
+
+    /**
+     * Assign absolute progress. Used by streak achievements that must be able
+     * to fall back to zero on a loss — {@link #record} only ever adds.
+     *
+     * @return true iff this call unlocked the achievement
+     */
+    boolean setProgress(int value) {
+        if (unlocked) return false;
+        int next = Math.max(0, Math.min(goal, value));
+        if (next == progress) return false;
+        progress = next;
+        if (progress >= goal) {
+            progress = goal;
+            unlocked = true;
             return true;
         }
         return false;

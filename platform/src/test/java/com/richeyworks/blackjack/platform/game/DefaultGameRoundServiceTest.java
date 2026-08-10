@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -55,17 +56,22 @@ class DefaultGameRoundServiceTest {
         return sum;
     }
 
-    @Test
-    void roundReconcilesToLedgerAndReleasesEscrow() {
-        fund(100_000);
-        GameRoundService.RoundState st = svc.startRound("p1", USD, 100, "round-key-1");
+    private GameRoundService.RoundState standOut(GameRoundService.RoundState st) {
         int guard = 0;
-        while (!st.settled() && guard++ < 12) {
+        while (!st.settled() && guard++ < 20) {
             var action = "INSURANCE".equals(st.phase())
                     ? GameRoundService.PlayerAction.INSURANCE_DECLINE
                     : GameRoundService.PlayerAction.STAND;
             st = svc.applyAction(st.roundId(), action);
         }
+        return st;
+    }
+
+    @Test
+    void roundReconcilesToLedgerAndReleasesEscrow() {
+        fund(100_000);
+        GameRoundService.RoundState st = svc.startRound("p1", USD, 100, "round-key-1");
+        st = standOut(st);
         assertTrue(st.settled(), "round should settle");
         assertEquals(0, escrowBalance(), "escrow released after settlement");
         // No double/split/insurance in this path, so wagered == base stake (100).
@@ -85,5 +91,62 @@ class DefaultGameRoundServiceTest {
     void rejectsStakeBeyondBalance() {
         fund(50);
         assertThrows(IllegalStateException.class, () -> svc.startRound("p1", USD, 100_000, "k3"));
+    }
+
+    @Test
+    void expireDoesNotAllowFreeSecondRoundOnSameKey() {
+        fund(50_000);
+        GameRoundService.RoundState st = svc.startRound("p1", USD, 100, "expire-key");
+        st = standOut(st);
+        assertTrue(st.settled());
+        long afterFirst = wallet.availableMinor("p1", USD);
+
+        // Operator sweep forgets the live map entry but must keep the tombstone.
+        ((DefaultGameRoundService) svc).expireRounds(0);
+
+        // Same client key: must return the finished snapshot, not a free new deal.
+        GameRoundService.RoundState again = svc.startRound("p1", USD, 100, "expire-key");
+        assertTrue(again.settled());
+        assertEquals(st.roundId(), again.roundId());
+        assertEquals(afterFirst, wallet.availableMinor("p1", USD), "no second free round");
+        assertEquals(0, escrowBalance());
+        wallet.reconcile();
+    }
+
+    @Test
+    void applyActionRejectsWrongPlayer() {
+        fund(50_000);
+        GameRoundService.RoundState st = svc.startRound("p1", USD, 100, "owner-key");
+        if (st.settled()) return; // rare natural — nothing to apply
+        assertThrows(IllegalStateException.class, () ->
+                svc.applyAction("p2", st.roundId(), GameRoundService.PlayerAction.STAND, "a1"));
+    }
+
+    @Test
+    void applyActionIsIdempotentOnActionKey() {
+        fund(50_000);
+        GameRoundService.RoundState st = svc.startRound("p1", USD, 100, "idem-act");
+        if (st.settled()) return;
+        var action = "INSURANCE".equals(st.phase())
+                ? GameRoundService.PlayerAction.INSURANCE_DECLINE
+                : GameRoundService.PlayerAction.STAND;
+        GameRoundService.RoundState a = svc.applyAction("p1", st.roundId(), action, "same-key");
+        GameRoundService.RoundState b = svc.applyAction("p1", st.roundId(), action, "same-key");
+        assertEquals(a.phase(), b.phase());
+        assertEquals(a.settled(), b.settled());
+        assertEquals(a.publicView(), b.publicView());
+    }
+
+    @Test
+    void roundIdsAreNotSequentialGuessable() {
+        fund(50_000);
+        var a = svc.startRound("p1", USD, 50, "id-a");
+        // finish so next start is clean
+        standOut(a);
+        var b = svc.startRound("p1", USD, 50, "id-b");
+        assertNotEquals(a.roundId(), b.roundId());
+        assertTrue(a.roundId().startsWith("round-"));
+        // UUID form, not "round-1" / "round-2"
+        assertTrue(a.roundId().length() > 20);
     }
 }
